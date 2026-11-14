@@ -1,0 +1,186 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/workspaces/rst_dolapdere/users/$(request.auth.uid);
+    }
+
+    function profilePath(uid) {
+      return /databases/$(database)/documents/workspaces/rst_dolapdere/users/$(uid);
+    }
+
+    function contractPath(contractId) {
+      return /databases/$(database)/documents/workspaces/rst_dolapdere/contracts/$(contractId);
+    }
+
+    function activeUser() {
+      return signedIn() && exists(userPath()) && get(userPath()).data.isActive == true;
+    }
+
+    function role() {
+      return get(userPath()).data.role;
+    }
+
+    function manager() {
+      return activeUser() && role() in ['admin', 'manager'];
+    }
+
+    function supervisor() {
+      return activeUser() && role() == 'supervisor';
+    }
+
+    function supervisorCan(module) {
+      return supervisor() && get(userPath()).data.get('permissions', {}).get(module, false) == true;
+    }
+
+    function assignedContract(contractId) {
+      return supervisor() && contractId in get(userPath()).data.get('assignedContractIds', []);
+    }
+
+    function assignedCustomer(customerId) {
+      return supervisor() && customerId in get(userPath()).data.get('assignedCustomerIds', []);
+    }
+
+    function assignedAdSpace(adSpaceId) {
+      return supervisor() && adSpaceId in get(userPath()).data.get('assignedAdSpaceIds', []);
+    }
+
+    function supervisorAssigningSelf(uid) {
+      return supervisorCan('contracts') && uid == request.auth.uid
+        && request.resource.data.get('lastAssignedContractId', '') is string
+        && getAfter(contractPath(request.resource.data.lastAssignedContractId)).data.responsibleUserId == uid
+        && request.resource.data.assignedContractIds.hasAny([request.resource.data.lastAssignedContractId])
+        && request.resource.data.assignedCustomerIds.hasAny([request.resource.data.lastAssignedCustomerId])
+        && request.resource.data.assignedAdSpaceIds.hasAny([request.resource.data.lastAssignedAdSpaceId]);
+    }
+
+    function managerAssignmentUpdate() {
+      return manager()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'assignedContractIds', 'assignedCustomerIds', 'assignedAdSpaceIds'
+        ])
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.isActive == resource.data.isActive
+        && request.resource.data.username == resource.data.username;
+    }
+
+    match /workspaces/rst_dolapdere/users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || manager());
+      allow create: if manager()
+        && request.resource.data.username.matches('^[a-z0-9._-]{3,32}$')
+        && request.resource.data.role in ['manager', 'supervisor', 'admin']
+        && (role() == 'admin' || request.resource.data.role != 'admin')
+        && request.resource.data.isActive is bool
+        && getAfter(/databases/$(database)/documents/workspaces/rst_dolapdere/usernameIndex/$(request.resource.data.username)).data.uid == uid;
+      allow delete: if false;
+      allow update: if (activeUser() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt']))
+          || (activeUser() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'notificationPreferences', 'updatedAt'
+            ]))
+        || (manager()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'role', 'isActive', 'permissions', 'email', 'updatedAt',
+            'assignedContractIds', 'assignedCustomerIds', 'assignedAdSpaceIds'
+          ])
+          && (role() == 'admin' || (resource.data.role != 'admin' && request.resource.data.role != 'admin')))
+        || managerAssignmentUpdate()
+        || (activeUser() && supervisorAssigningSelf(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'assignedContractIds', 'assignedCustomerIds', 'assignedAdSpaceIds',
+            'lastAssignedContractId', 'lastAssignedCustomerId', 'lastAssignedAdSpaceId'
+          ])
+          && request.resource.data.assignedContractIds.hasAll(resource.data.get('assignedContractIds', []))
+          && request.resource.data.assignedCustomerIds.hasAll(resource.data.get('assignedCustomerIds', []))
+          && request.resource.data.assignedAdSpaceIds.hasAll(resource.data.get('assignedAdSpaceIds', [])));
+
+      match /devices/{deviceId} {
+        allow read, write: if activeUser() && request.auth.uid == uid;
+      }
+
+      match /inbox/{messageId} {
+        allow read: if activeUser() && request.auth.uid == uid;
+        allow create, delete: if false;
+        allow update: if activeUser() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      }
+    }
+
+    match /workspaces/rst_dolapdere/usernameIndex/{username} {
+      allow read: if manager();
+      allow create: if manager()
+        && request.resource.data.uid is string
+        && getAfter(profilePath(request.resource.data.uid)).data.username == username;
+      allow update, delete: if false;
+    }
+
+    match /workspaces/rst_dolapdere/contracts/{contractId} {
+      allow read: if manager() || (supervisorCan('contracts') && (
+        resource.data.get('responsibleUserId', '') == request.auth.uid
+        || resource.data.get('responsibleUserId', '') == ''
+        || resource.data.get('responsibleUserId', null) == null
+      ));
+      allow create, delete: if manager();
+      allow update: if manager()
+        || supervisorCan('contracts')
+          && resource.data.responsibleUserId == request.auth.uid
+          && request.resource.data.responsibleUserId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isActive', 'isFinalized', 'finalizedAt', 'history'
+          ])
+        || manager()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'responsibleUserId', 'responsibleUsername', 'updatedAt', 'history'
+          ])
+          && getAfter(profilePath(request.resource.data.responsibleUserId)).data.isActive == true
+          && getAfter(profilePath(request.resource.data.responsibleUserId)).data.username == request.resource.data.responsibleUsername
+          && getAfter(profilePath(request.resource.data.responsibleUserId)).data.assignedContractIds.hasAny([contractId])
+          && getAfter(profilePath(request.resource.data.responsibleUserId)).data.assignedCustomerIds.hasAny([resource.data.customerId])
+          && getAfter(profilePath(request.resource.data.responsibleUserId)).data.assignedAdSpaceIds.hasAny([resource.data.adSpaceId])
+        || supervisorCan('contracts')
+          && resource.data.get('responsibleUserId', '') in ['', null]
+          && request.resource.data.responsibleUserId == request.auth.uid
+          && request.resource.data.responsibleUsername == get(userPath()).data.username
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'responsibleUserId', 'responsibleUsername', 'updatedAt', 'history'
+          ])
+          && getAfter(userPath()).data.assignedContractIds.hasAny([contractId])
+          && getAfter(userPath()).data.assignedCustomerIds.hasAny([resource.data.customerId])
+          && getAfter(userPath()).data.assignedAdSpaceIds.hasAny([resource.data.adSpaceId]);
+    }
+
+    match /workspaces/rst_dolapdere/customers/{customerId} {
+      allow read: if manager() || (supervisorCan('customers') && assignedCustomer(customerId));
+      allow write: if manager();
+    }
+
+    match /workspaces/rst_dolapdere/adSpaces/{adSpaceId} {
+      allow read: if manager() || (supervisorCan('adSpaces') && assignedAdSpace(adSpaceId));
+      allow write: if manager();
+    }
+
+    match /workspaces/rst_dolapdere/contractRequests/{requestId} {
+      allow read: if manager() || (activeUser() && resource.data.submittedBy == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /workspaces/rst_dolapdere/settings/{documentId} {
+      allow read: if manager();
+      allow write: if manager();
+    }
+
+    match /workspaces/rst_dolapdere/reminderDeliveries/{deliveryId} {
+      allow read: if manager();
+      allow write: if false;
+    }
+
+    match /workspaces/{workspaceId}/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

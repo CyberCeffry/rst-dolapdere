@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "18751633043",
+    "project_id": "deresozlesmetakip",
+    "storage_bucket": "deresozlesmetakip.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:18751633043:android:bb25dba29ff2b3d60bff66",
+        "android_client_info": {
+          "package_name": "com.example.dere_sozlesme_takip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDAQlP3A_I-Vo2cRNLKxOuP0KsTT7o6ep4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
