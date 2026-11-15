@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
-
 class AppSidebar extends StatelessWidget {
   const AppSidebar({
     super.key,
@@ -40,43 +38,46 @@ class AppSidebar extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 240,
-    color: AppColors.sidebar,
-    child: SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 24, 16, 22),
-            child: Text(
-              'RST DOLAPDERE',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 240,
+      color: colors.surface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 16, 22),
+              child: Text(
+                'RST DOLAPDERE',
+                style: TextStyle(
+                  color: colors.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          for (final index in visibleIndices)
-            ListTile(
-              selected: selectedIndex == index,
-              selectedTileColor: Colors.white.withValues(alpha: 0.12),
-              leading: Icon(
-                destinations[index].icon is Icon
-                    ? (destinations[index].icon as Icon).icon
-                    : Icons.circle_outlined,
-                color: Colors.white,
+            for (final index in visibleIndices)
+              ListTile(
+                selected: selectedIndex == index,
+                selectedTileColor: colors.primary.withValues(alpha: 0.12),
+                leading: Icon(
+                  destinations[index].icon is Icon
+                      ? (destinations[index].icon as Icon).icon
+                      : Icons.circle_outlined,
+                  color: colors.onSurfaceVariant,
+                ),
+                title: Text(
+                  _labels[index],
+                  style: TextStyle(color: colors.onSurface),
+                ),
+                onTap: () => onDestinationSelected(index),
               ),
-              title: Text(
-                _labels[index],
-                style: const TextStyle(color: Colors.white),
-              ),
-              onTap: () => onDestinationSelected(index),
-            ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   static const _labels = [
     'Ana Panel',

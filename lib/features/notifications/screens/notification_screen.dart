@@ -119,37 +119,45 @@ class NotificationScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Bildirimler',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '10, 5 ve son gün hatırlatmaları',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 20),
               if (contracts.isEmpty)
-                const Card(
+                Card(
                   child: SizedBox(
                     width: double.infinity,
                     child: Padding(
-                      padding: EdgeInsets.all(32),
+                      padding: const EdgeInsets.all(32),
                       child: Column(
                         children: [
                           Icon(
                             Icons.notifications_none,
                             size: 40,
-                            color: AppColors.textSecondary,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                           SizedBox(height: 12),
                           Text(
                             'Yaklaşan sözleşme bulunmuyor.',
-                            style: TextStyle(color: AppColors.textSecondary),
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
@@ -337,7 +345,9 @@ class _ReminderChip extends StatelessWidget {
     avatar: Icon(
       active ? Icons.check_circle : Icons.schedule,
       size: 16,
-      color: active ? AppColors.success : AppColors.textSecondary,
+      color: active
+          ? AppColors.success
+          : Theme.of(context).colorScheme.onSurfaceVariant,
     ),
     label: Text(label),
     visualDensity: VisualDensity.compact,

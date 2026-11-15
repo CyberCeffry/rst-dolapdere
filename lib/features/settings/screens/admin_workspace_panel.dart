@@ -48,7 +48,7 @@ class AdminWorkspacePanel extends StatelessWidget {
                           : Icons.person_off_outlined,
                       color: user.isActive
                           ? AppColors.primary
-                          : AppColors.textSecondary,
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: Text(user.username),
                     subtitle: Text(

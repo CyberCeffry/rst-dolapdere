@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,6 +10,17 @@ import 'package:dere_sozlesme_takip/models/customer_model.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('theme preference persists across app store instances', () async {
+    final store = await AppStore.initialize();
+    expect(store.themeMode.value, ThemeMode.system);
+
+    await store.setThemeMode(ThemeMode.dark);
+    store.dispose();
+
+    final restored = await AppStore.initialize();
+    expect(restored.themeMode.value, ThemeMode.dark);
+  });
 
   test(
     'records persist and active contracts mark an ad space occupied',

@@ -1,79 +1,96 @@
 import 'package:flutter/material.dart';
+
 import 'app_colors.dart';
 
 class AppTheme {
-  static ThemeData get lightTheme {
+  static final ThemeData lightTheme = _build(Brightness.light);
+  static final ThemeData darkTheme = _build(Brightness.dark);
+
+  static ThemeData _build(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    final background = isDark
+        ? const Color(0xFF0B1115)
+        : const Color(0xFFF4F7F8);
+    final surface = isDark ? const Color(0xFF141E24) : Colors.white;
+    final raisedSurface = isDark
+        ? const Color(0xFF1A272E)
+        : const Color(0xFFEDF2F3);
+    final sidebar = isDark ? const Color(0xFF080D10) : Colors.white;
+    final textPrimary = isDark
+        ? const Color(0xFFE7F0F1)
+        : const Color(0xFF18252B);
+    final textSecondary = isDark
+        ? const Color(0xFF9AADB2)
+        : const Color(0xFF52636A);
+    final border = isDark ? const Color(0xFF293940) : const Color(0xFFD8E1E4);
+
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.background,
-
+      brightness: brightness,
+      scaffoldBackgroundColor: background,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
-        brightness: Brightness.dark,
-        surface: AppColors.surface,
+        brightness: brightness,
+        surface: surface,
         primary: AppColors.primary,
         onPrimary: AppColors.sidebar,
         secondary: AppColors.success,
         error: AppColors.danger,
       ),
-
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
+      appBarTheme: AppBarTheme(
+        backgroundColor: surface,
+        foregroundColor: textPrimary,
         elevation: 0,
         centerTitle: false,
         scrolledUnderElevation: 0,
       ),
-
       cardTheme: CardThemeData(
-        color: AppColors.surface,
+        color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: border),
         ),
       ),
-
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.surfaceRaised,
+        fillColor: raisedSurface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: BorderSide(color: border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
-        labelStyle: const TextStyle(color: AppColors.textSecondary),
-        hintStyle: const TextStyle(color: AppColors.textSecondary),
+        labelStyle: TextStyle(color: textSecondary),
+        hintStyle: TextStyle(color: textSecondary),
       ),
-      dividerTheme: const DividerThemeData(color: AppColors.border),
-      dialogTheme: const DialogThemeData(
-        backgroundColor: AppColors.surface,
+      dividerTheme: DividerThemeData(color: border),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: AppColors.sidebar,
+        backgroundColor: sidebar,
         indicatorColor: AppColors.primary.withValues(alpha: 0.18),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
             color: states.contains(WidgetState.selected)
                 ? AppColors.primary
-                : AppColors.textSecondary,
+                : textSecondary,
             fontSize: 12,
           ),
         ),
       ),
-      textTheme: const TextTheme(
-        bodyLarge: TextStyle(color: AppColors.textPrimary),
-        bodyMedium: TextStyle(color: AppColors.textPrimary),
-        titleMedium: TextStyle(color: AppColors.textPrimary),
+      textTheme: TextTheme(
+        bodyLarge: TextStyle(color: textPrimary),
+        bodyMedium: TextStyle(color: textPrimary),
+        titleMedium: TextStyle(color: textPrimary),
       ),
     );
   }

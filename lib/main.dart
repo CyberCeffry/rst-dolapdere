@@ -8,7 +8,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/services/app_store.dart';
 import 'core/theme/app_theme.dart';
-import 'features/auth/auth_gate.dart';
 import 'firebase_options.dart';
 import 'shared/layouts/main_layout.dart';
 
@@ -22,7 +21,8 @@ Future<void> main() async {
       kIsWeb ||
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.macOS;
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.windows;
   if (firebaseSupported) {
     try {
       await Firebase.initializeApp(
@@ -35,50 +35,14 @@ Future<void> main() async {
   } else {
     cloudError = 'Bu platformda kayıtlar cihazda tutuluyor.';
   }
-  if (firestore != null) {
-    runApp(AuthenticatedApplication(firestore: firestore));
-    return;
-  }
-  runApp(_AuthenticationUnavailableApp(message: cloudError));
-}
-
-class _AuthenticationUnavailableApp extends StatelessWidget {
-  const _AuthenticationUnavailableApp({required this.message});
-
-  final String? message;
-
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'RST Dolapdere',
-    theme: AppTheme.lightTheme,
-    home: Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.cloud_off_outlined, size: 44),
-                const SizedBox(height: 16),
-                const Text(
-                  'Güvenli oturum açılamadı',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  message ??
-                      'Bu platform için Firebase Authentication ve Firestore yapılandırması gerekiyor.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
+  final store = await AppStore.initialize(
+    firestore: firestore,
+    initialSyncError: cloudError,
   );
+  runApp(RSTDolapdereApp(store: store));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    mainLayoutKey.currentState?.initializeReminders();
+  });
 }
 
 class RSTDolapdereApp extends StatelessWidget {
@@ -88,14 +52,19 @@ class RSTDolapdereApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RST Dolapdere',
-      debugShowCheckedModeBanner: false,
-      locale: const Locale('tr', 'TR'),
-      supportedLocales: const [Locale('tr', 'TR')],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: AppTheme.lightTheme,
-      home: MainLayout(key: mainLayoutKey, store: store),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: store.themeMode,
+      builder: (context, themeMode, _) => MaterialApp(
+        title: 'RST Dolapdere',
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('tr', 'TR'),
+        supportedLocales: const [Locale('tr', 'TR')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: themeMode,
+        home: MainLayout(key: mainLayoutKey, store: store),
+      ),
     );
   }
 }

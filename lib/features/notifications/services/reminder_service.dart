@@ -13,10 +13,24 @@ class ReminderService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _ready = false;
-  ValueChanged<String>? _onReviewContract;
+  ValueChanged<NotificationResponse>? _onNotificationResponse;
+
+  void setNotificationHandler(ValueChanged<NotificationResponse> handler) {
+    _onNotificationResponse = handler;
+  }
 
   void setReviewHandler(ValueChanged<String> handler) {
-    _onReviewContract = handler;
+    _onNotificationResponse = (response) {
+      final action = response.actionId ?? '';
+      final contractId = action.startsWith('contract:')
+          ? action.substring('contract:'.length)
+          : response.payload;
+      if (contractId != null &&
+          contractId.isNotEmpty &&
+          !contractId.startsWith('expiring:')) {
+        handler(contractId);
+      }
+    };
   }
 
   Future<void> initialize({bool windowsEnabled = false}) async {
@@ -32,6 +46,7 @@ class ReminderService {
         platform != TargetPlatform.windows) {
       return;
     }
+    if (_ready) return;
 
     timezone_data.initializeTimeZones();
     timezone.setLocalLocation(timezone.getLocation('Europe/Istanbul'));
@@ -48,13 +63,15 @@ class ReminderService {
     );
     await _plugin.initialize(
       settings: notificationSettings,
-      onDidReceiveNotificationResponse: (response) {
-        final contractId = response.payload;
-        if (contractId != null && contractId.isNotEmpty) {
-          _onReviewContract?.call(contractId);
-        }
-      },
+      onDidReceiveNotificationResponse: (response) =>
+          _onNotificationResponse?.call(response),
     );
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    final launchResponse = launchDetails?.notificationResponse;
+    if (launchDetails?.didNotificationLaunchApp == true &&
+        launchResponse != null) {
+      _onNotificationResponse?.call(launchResponse);
+    }
     if (platform == TargetPlatform.android) {
       await _plugin
           .resolvePlatformSpecificImplementation<
@@ -101,7 +118,7 @@ class ReminderService {
           title: 'Sözleşme bitişi yaklaşıyor',
           body: '${space.name} alanındaki $customerName sözleşmesi $dayText.',
           scheduledDate: reminderDate,
-          notificationDetails: const NotificationDetails(
+          notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               'contract_reminders',
               'Sözleşme hatırlatmaları',
@@ -112,7 +129,16 @@ class ReminderService {
             ),
             iOS: DarwinNotificationDetails(),
             windows: WindowsNotificationDetails(
-              actions: [WindowsAction(content: 'İncele', arguments: 'review')],
+              actions: [
+                WindowsAction(
+                  content: 'Süresi yaklaşanları aç',
+                  arguments: 'expiring:${contract.id}',
+                ),
+                WindowsAction(
+                  content: 'Bu sözleşmeyi aç',
+                  arguments: 'contract:${contract.id}',
+                ),
+              ],
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

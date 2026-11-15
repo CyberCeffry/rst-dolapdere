@@ -68,7 +68,11 @@ Functions'i kurup dagitmak icin `firebase login`, `cd functions`, `npm install`,
 
 ## Erisim Notu
 
-Firestore Security Rules, istemci uygulamasinin kullandigi yollar icin Firebase Console'da etkin olmalidir. Functions Admin SDK kurallardan bagimsiz calisir.
+Uygulama kullanici girisi olmadan acilir. `firestore.rules`, `workspaces/rst_dolapdere` altindaki tum belgelere kimlik dogrulamasi olmadan okuma/yazma izni verir. Bu veriler proje kimligini bilen herkes tarafindan okunabilir ve degistirilebilir; yalnizca herkese acik kullanimi kabul ediyorsaniz yayinlayin.
+
+Kurallari uygulamanin kullandigi Firebase projesinde etkinlestirmek icin proje kokunde `firebase deploy --only firestore:rules --project deresozlesmetakip` calistirin.
+
+Windows masaustu hatirlatmalari Ayarlar ekranindan acilir. Windows **Ayarlar > Sistem > Bildirimler** bolumunde RST Dolapdere icin bildirimleri ve basliklari etkinlestirin. Hatirlatma bildirimleri, yaklasan sozlesmeleri acma ve bildirime konu sozlesmeyi acma eylemlerini icerir.
 
 ## Uygulamayi Calistirma
 

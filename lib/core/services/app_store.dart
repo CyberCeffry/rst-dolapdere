@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/ad_space_model.dart';
@@ -20,6 +20,13 @@ class AppStore extends ChangeNotifier {
     this._user, {
     String? initialSyncError,
   }) : syncError = initialSyncError {
+    final savedThemeMode = _preferences.getString('themeMode');
+    themeMode = ValueNotifier(
+      ThemeMode.values.firstWhere(
+        (mode) => mode.name == savedThemeMode,
+        orElse: () => ThemeMode.system,
+      ),
+    );
     _customers = _readList('customers', CustomerModel.fromJson);
     _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
     _contracts = _readList('contracts', ContractModel.fromJson);
@@ -43,6 +50,7 @@ class AppStore extends ChangeNotifier {
   final SharedPreferences _preferences;
   final FirebaseFirestore? _firestore;
   final AppUser? _user;
+  late final ValueNotifier<ThemeMode> themeMode;
   AuthService? _authServiceInstance;
 
   AuthService get _authService =>
@@ -90,6 +98,11 @@ class AppStore extends ChangeNotifier {
   bool get cloudSyncEnabled => _firestore != null;
   bool get isCloudSyncing => _isSyncing;
   AppUser? get currentUser => _user;
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    await _preferences.setString('themeMode', mode.name);
+    themeMode.value = mode;
+  }
 
   List<CustomerModel> get customers => List.unmodifiable(_customers);
   List<AdSpaceModel> get adSpaces => List.unmodifiable(_adSpaces);
@@ -924,6 +937,7 @@ class AppStore extends ChangeNotifier {
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
+    themeMode.dispose();
 
     super.dispose();
   }

@@ -408,7 +408,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
     String subtitle;
     Widget? subtitleWidget;
     IconData icon;
-    Color statusColor = AppColors.textSecondary;
+    Color statusColor = Theme.of(context).colorScheme.onSurfaceVariant;
     String? status;
 
     if (record is AdSpaceModel) {
@@ -483,7 +483,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ? '$days gün kaldı'
           : 'Aktif';
       statusColor = contract.isFinalized || days < 0
-          ? AppColors.textSecondary
+          ? Theme.of(context).colorScheme.onSurfaceVariant
           : days <= 10
           ? AppColors.danger
           : AppColors.success;
@@ -493,7 +493,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: AppColors.background,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
           child: Icon(icon, color: AppColors.primary),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -652,10 +654,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
                   Expanded(
                     child: Text(
                       widget.showEndedContracts ? 'Biten Sözleşmeler' : _title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -796,7 +798,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       '${_availableContracts.length} sözleşme kendinize atanabilir.',
-                      style: const TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
               ],
@@ -835,15 +839,19 @@ class _ManagementScreenState extends State<ManagementScreen> {
                                 ? Icons.people_outline
                                 : Icons.description_outlined,
                             size: 40,
-                            color: AppColors.textSecondary,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(height: 12),
                           Text(
                             _query.isEmpty
                                 ? 'Henüz kayıt bulunmuyor.'
                                 : 'Aramanızla eşleşen kayıt yok.',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],

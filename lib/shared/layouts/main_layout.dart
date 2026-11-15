@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/services/app_store.dart';
 import '../../core/services/auth_service.dart';
-import '../../core/theme/app_colors.dart';
+import '../../features/notifications/services/reminder_service.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/notifications/screens/notification_screen.dart';
 import '../../features/records/management_screens.dart';
@@ -31,6 +34,7 @@ class MainLayoutState extends State<MainLayout> {
   int selectedIndex = 0;
   ContractListFilter _contractFilter = ContractListFilter.all;
   AdSpaceListFilter _adSpaceFilter = AdSpaceListFilter.all;
+  String? _pendingContractId;
 
   final List<String> pageTitles = [
     'Ana Panel',
@@ -59,6 +63,82 @@ class MainLayoutState extends State<MainLayout> {
     if (!_canAccess('dashboard') && _visibleIndices.isNotEmpty) {
       selectedIndex = _visibleIndices.first;
     }
+    ReminderService.instance.setNotificationHandler(
+      _handleNotificationResponse,
+    );
+    widget.store.addListener(_onStoreChanged);
+  }
+
+  void initializeReminders() {
+    unawaited(_initializeReminders());
+  }
+
+  Future<void> _initializeReminders() async {
+    try {
+      await ReminderService.instance.initialize(
+        windowsEnabled: widget.store.windowsRemindersEnabled,
+      );
+      await ReminderService.instance.sync(widget.store);
+    } catch (error) {
+      debugPrint('Masaüstü bildirimleri başlatılamadı: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Masaüstü bildirimleri başlatılamadı: $error'),
+          ),
+        );
+      }
+    }
+  }
+
+  void _onStoreChanged() {
+    final pendingContractId = _pendingContractId;
+    if (pendingContractId != null &&
+        widget.store.contracts.any(
+          (contract) => contract.id == pendingContractId,
+        )) {
+      _pendingContractId = null;
+      openContract(pendingContractId);
+    }
+    unawaited(_syncReminders());
+  }
+
+  Future<void> _syncReminders() async {
+    try {
+      await ReminderService.instance.sync(widget.store);
+    } catch (error) {
+      debugPrint('Masaüstü bildirimleri eşitlenemedi: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Masaüstü bildirimleri eşitlenemedi: $error')),
+        );
+      }
+    }
+  }
+
+  void _handleNotificationResponse(NotificationResponse response) {
+    final action = response.actionId ?? '';
+    if (action.startsWith('expiring:')) {
+      openExpiringContracts();
+      return;
+    }
+    if (action.startsWith('contract:')) {
+      _openNotifiedContract(action.substring('contract:'.length));
+      return;
+    }
+    final contractId = response.payload;
+    if (contractId != null && contractId.isNotEmpty) {
+      _openNotifiedContract(contractId);
+    }
+  }
+
+  void _openNotifiedContract(String contractId) {
+    if (!_canAccess('contracts')) return;
+    if (!widget.store.contracts.any((contract) => contract.id == contractId)) {
+      _pendingContractId = contractId;
+      return;
+    }
+    openContract(contractId);
   }
 
   Widget getSelectedPage() {
@@ -95,6 +175,7 @@ class MainLayoutState extends State<MainLayout> {
         );
       case 3:
         return ManagementScreen(
+          key: ValueKey('contracts-${_contractFilter.name}'),
           store: widget.store,
           type: RecordType.contracts,
           initialContractFilter: _contractFilter,
@@ -102,6 +183,7 @@ class MainLayoutState extends State<MainLayout> {
         );
       case 4:
         return ManagementScreen(
+          key: ValueKey('ended-contracts-${_contractFilter.name}'),
           store: widget.store,
           type: RecordType.contracts,
           showEndedContracts: true,
@@ -124,9 +206,9 @@ class MainLayoutState extends State<MainLayout> {
           child: Text(
             '${pageTitles[selectedIndex]} ekranını sonraki aşamada hazırlayacağız.',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         );
@@ -213,6 +295,20 @@ class MainLayoutState extends State<MainLayout> {
     });
   }
 
+  void openExpiringContracts() {
+    if (!_canAccess('contracts')) return;
+    setState(() {
+      selectedIndex = 3;
+      _contractFilter = ContractListFilter.upcoming;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -239,10 +335,14 @@ class MainLayoutState extends State<MainLayout> {
                         padding: EdgeInsets.symmetric(
                           horizontal: isDesktop ? 24 : 16,
                         ),
-                        decoration: const BoxDecoration(
-                          color: AppColors.surface,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
                           border: Border(
-                            bottom: BorderSide(color: AppColors.border),
+                            bottom: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
                           ),
                         ),
                         child: Row(
@@ -252,23 +352,31 @@ class MainLayoutState extends State<MainLayout> {
                                 pageTitles[selectedIndex],
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                               ),
                             ),
-                            const Icon(
+                            Icon(
                               Icons.account_circle_outlined,
-                              color: AppColors.textSecondary,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                               size: 28,
                             ),
                             if (isDesktop) ...[
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 'Yönetici',
-                                style: TextStyle(color: AppColors.textPrimary),
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
                               ),
                             ],
                           ],

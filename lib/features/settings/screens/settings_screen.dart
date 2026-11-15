@@ -75,16 +75,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Windows bildirim izni'),
         content: const Text(
-          'RST Dolapdere, yaklaşan ve biten sözleşmeler için bu Windows cihazında bildirim gösterecek. Bildirimlerin ekranda görünmesine izin veriyor musunuz?',
+          'RST Dolapdere, yaklaşan sözleşmeler için bu Windows cihazında bildirim gösterecek. Windows Ayarları > Sistem > Bildirimler bölümünde uygulama bildirimlerini ve başlıkları açık tutun.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('İzin verme'),
+            child: const Text('İptal'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('İzin ver'),
+            child: const Text('Etkinleştir'),
           ),
         ],
       ),
@@ -151,6 +151,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _setThemeMode(ThemeMode? mode) async {
+    if (mode == null) return;
+    try {
+      await store.setThemeMode(mode);
+    } catch (error) {
+      if (mounted) _showMessage('Tema tercihi kaydedilemedi: $error');
+    }
+  }
+
   Future<void> _changePassword() async {
     final credentials = await showDialog<({String current, String next})>(
       context: context,
@@ -212,12 +221,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Ayarlar',
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Görünüm',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<ThemeMode>(
+                    initialValue: store.themeMode.value,
+                    decoration: const InputDecoration(
+                      labelText: 'Tema',
+                      prefixIcon: Icon(Icons.palette_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: ThemeMode.light,
+                        child: Text('Açık'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.dark,
+                        child: Text('Koyu'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.system,
+                        child: Text('Sistem'),
+                      ),
+                    ],
+                    onChanged: _setThemeMode,
+                  ),
+                ],
+              ),
             ),
           ),
           if (widget.user != null && widget.authService != null) ...[
@@ -324,9 +371,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
           if (widget.user?.role != AppRole.supervisor) ...[
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Bildirim tercihleri',
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 20),
             Card(
@@ -335,18 +384,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Yönetici iletişim bilgileri',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Otomatik hatırlatmalar bu e-posta ve WhatsApp numarasına gönderilir.',
-                      style: TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -431,7 +482,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       title: const Text('Windows masaüstü bildirimi'),
                       subtitle: const Text(
-                        'Açarken izin iste; yaklaşan ve biten sözleşmeleri Windows’ta göster',
+                        'Windows bildirim merkezinde yaklaşan sözleşme hatırlatmaları göster',
                       ),
                       value: store.windowsRemindersEnabled,
                       onChanged: _setWindowsNotifications,
@@ -471,6 +522,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   !store.cloudSyncEnabled
                       ? store.syncError ??
                             'Firestore bu platformda kapalı; kayıtlar cihazda tutuluyor.'
+                      : store.syncError?.contains('permission-denied') == true
+                      ? 'Erişim reddedildi. Firebase Console’da Firestore kurallarını yayımlayın: firebase deploy --only firestore:rules --project deresozlesmetakip'
                       : store.syncError != null
                       ? 'Bağlantı hatası: ${store.syncError}'
                       : store.isCloudSyncing
