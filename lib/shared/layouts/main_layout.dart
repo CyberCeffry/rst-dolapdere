@@ -75,9 +75,7 @@ class MainLayoutState extends State<MainLayout> {
 
   Future<void> _initializeReminders() async {
     try {
-      await ReminderService.instance.initialize(
-        windowsEnabled: widget.store.windowsRemindersEnabled,
-      );
+      await ReminderService.instance.initialize();
       await ReminderService.instance.sync(widget.store);
     } catch (error) {
       debugPrint('Masaüstü bildirimleri başlatılamadı: $error');
@@ -118,7 +116,16 @@ class MainLayoutState extends State<MainLayout> {
 
   void _handleNotificationResponse(NotificationResponse response) {
     final action = response.actionId ?? '';
-    if (action.startsWith('expiring:')) {
+    if (action == 'snooze' || action.startsWith('snooze:')) {
+      final contractId = action.startsWith('snooze:')
+          ? action.substring('snooze:'.length)
+          : response.payload;
+      if (contractId != null && contractId.isNotEmpty) {
+        unawaited(_chooseSnoozeDuration(contractId));
+      }
+      return;
+    }
+    if (action == 'expiring' || action.startsWith('expiring:')) {
       openExpiringContracts();
       return;
     }
@@ -130,6 +137,79 @@ class MainLayoutState extends State<MainLayout> {
     if (contractId != null && contractId.isNotEmpty) {
       _openNotifiedContract(contractId);
     }
+  }
+
+  Future<void> _chooseSnoozeDuration(String contractId) async {
+    final duration = await showDialog<Duration>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hatırlatmayı ertele'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (label, duration) in const [
+                ('5 dakika', Duration(minutes: 5)),
+                ('10 dakika', Duration(minutes: 10)),
+                ('30 dakika', Duration(minutes: 30)),
+                ('1 saat', Duration(hours: 1)),
+                ('2 saat', Duration(hours: 2)),
+                ('1 gün', Duration(days: 1)),
+                ('2 gün', Duration(days: 2)),
+              ])
+                ListTile(
+                  title: Text(label),
+                  leading: const Icon(Icons.snooze_outlined),
+                  onTap: () => Navigator.of(context).pop(duration),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Vazgeç'),
+          ),
+        ],
+      ),
+    );
+    if (duration == null || !mounted) return;
+    try {
+      final contracts = widget.store.contracts.where(
+        (item) => item.id == contractId,
+      );
+      if (contracts.isEmpty) {
+        throw StateError('Sözleşme bulunamadı.');
+      }
+      final contract = contracts.first;
+      await ReminderService.instance.snooze(
+        contractId,
+        duration,
+        widget.store.workingDays,
+        contract.endDate,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Hatırlatma ${_snoozeDurationLabel(duration)} ertelendi.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hatırlatma ertelenemedi: $error')),
+        );
+      }
+    }
+  }
+
+  String _snoozeDurationLabel(Duration duration) {
+    if (duration.inDays > 0) return '${duration.inDays} gün';
+    if (duration.inHours > 0) return '${duration.inHours} saat';
+    return '${duration.inMinutes} dakika';
   }
 
   void _openNotifiedContract(String contractId) {
@@ -192,6 +272,7 @@ class MainLayoutState extends State<MainLayout> {
       case 5:
         return NotificationScreen(
           store: widget.store,
+          user: widget.user,
           onReviewContract: openContract,
         );
       case 6:

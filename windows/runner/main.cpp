@@ -1,9 +1,88 @@
 ﻿#include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <atlbase.h>
+#include <propkey.h>
+#include <propvarutil.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#include <string>
 
 #include "flutter_window.h"
 #include "utils.h"
+
+namespace {
+
+constexpr wchar_t kAppUserModelId[] = L"RST.Dolapdere.Contracts";
+
+HRESULT EnsureStartMenuShortcut() {
+  wchar_t executablePath[MAX_PATH];
+  const DWORD pathLength =
+      GetModuleFileNameW(nullptr, executablePath, MAX_PATH);
+  if (pathLength == 0 || pathLength >= MAX_PATH) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+
+  PWSTR programsPath = nullptr;
+  HRESULT result =
+      SHGetKnownFolderPath(FOLDERID_Programs, KF_FLAG_CREATE, nullptr,
+                           &programsPath);
+  if (FAILED(result)) {
+    return result;
+  }
+
+  std::wstring shortcutPath(programsPath);
+  CoTaskMemFree(programsPath);
+  shortcutPath += L"\\RST Dolapdere.lnk";
+
+  CComPtr<IShellLinkW> shellLink;
+  result = shellLink.CoCreateInstance(CLSID_ShellLink);
+  if (FAILED(result)) {
+    return result;
+  }
+  result = shellLink->SetPath(executablePath);
+  if (FAILED(result)) {
+    return result;
+  }
+  std::wstring workingDirectory(executablePath);
+  const size_t separator = workingDirectory.find_last_of(L"\\/");
+  if (separator != std::wstring::npos) {
+    workingDirectory.resize(separator);
+    result = shellLink->SetWorkingDirectory(workingDirectory.c_str());
+    if (FAILED(result)) {
+      return result;
+    }
+  }
+
+  CComPtr<IPropertyStore> propertyStore;
+  result = shellLink->QueryInterface(IID_PPV_ARGS(&propertyStore));
+  if (FAILED(result)) {
+    return result;
+  }
+  PROPVARIANT appId;
+  result = InitPropVariantFromString(kAppUserModelId, &appId);
+  if (FAILED(result)) {
+    return result;
+  }
+  result = propertyStore->SetValue(PKEY_AppUserModel_ID, appId);
+  PropVariantClear(&appId);
+  if (FAILED(result)) {
+    return result;
+  }
+  result = propertyStore->Commit();
+  if (FAILED(result)) {
+    return result;
+  }
+
+  CComPtr<IPersistFile> persistFile;
+  result = shellLink->QueryInterface(IID_PPV_ARGS(&persistFile));
+  if (FAILED(result)) {
+    return result;
+  }
+  return persistFile->Save(shortcutPath.c_str(), TRUE);
+}
+
+}  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -16,6 +95,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  ::SetCurrentProcessExplicitAppUserModelID(kAppUserModelId);
+  const HRESULT shortcutResult = EnsureStartMenuShortcut();
+  if (FAILED(shortcutResult)) {
+    OutputDebugStringW(
+        L"RST Dolapdere could not register its Start menu notification shortcut.\n");
+  }
 
   flutter::DartProject project(L"data");
 

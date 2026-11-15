@@ -5,68 +5,27 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/app_store.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_helper.dart';
+import '../../../models/app_user.dart';
 import '../../../models/contract_model.dart';
 import '../../../models/customer_model.dart';
-
-Uri buildCustomerReminderEmailUri({
-  required String email,
-  required String subject,
-  required String body,
-}) => Uri.parse(
-  'mailto:$email?subject=${Uri.encodeComponent(subject)}&body=${Uri.encodeComponent(body)}',
-);
 
 class NotificationScreen extends StatelessWidget {
   const NotificationScreen({
     super.key,
     required this.store,
+    this.user,
     this.onReviewContract,
   });
 
   final AppStore store;
+  final AppUser? user;
   final ValueChanged<String>? onReviewContract;
-
-  Future<void> _openCustomerEmail(
-    BuildContext context,
-    ContractModel contract,
-  ) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final customer = store.customerFor(contract.customerId);
-    final email = customer?.email.trim() ?? '';
-    if (email.isEmpty) {
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text('Müşterinin e-posta adresi kayıtlı değil.'),
-        ),
-      );
-      return;
-    }
-    final space = store.adSpaceFor(contract.adSpaceId);
-    final subject =
-        'Sözleşme bitiş hatırlatması - ${space?.name ?? 'Reklam alanı'}';
-    final body = [
-      'Merhaba ${customer?.name ?? ''},',
-      '',
-      '${space?.name ?? 'Reklam alanı'} için sözleşmeniz ${DateFormat('dd.MM.yyyy').format(contract.endDate)} tarihinde sona eriyor.',
-      '',
-      'RST Dolapdere',
-    ].join('\n');
-    final uri = buildCustomerReminderEmailUri(
-      email: email,
-      subject: subject,
-      body: body,
-    );
-    if (!await launchUrl(uri)) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('E-posta uygulaması açılamadı.')),
-      );
-    }
-  }
 
   Future<void> _openWhatsApp(
     BuildContext context,
     ContractModel contract,
   ) async {
+    if (user?.role != AppRole.admin) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     final customer = store.customerFor(contract.customerId);
     var phone = (customer?.phone ?? '').replaceAll(RegExp(r'[^0-9]'), '');
@@ -82,10 +41,17 @@ class NotificationScreen extends StatelessWidget {
     if (phone.startsWith('0')) phone = phone.substring(1);
     if (phone.length == 10) phone = '90$phone';
     final space = store.adSpaceFor(contract.adSpaceId);
+    final daysRemaining = DateHelper.daysUntil(contract.endDate);
+    final remainingText = switch (daysRemaining) {
+      0 => 'Sözleşme bugün sona eriyor.',
+      > 0 => 'Sözleşmenin bitmesine $daysRemaining gün kalıyor.',
+      _ => 'Sözleşme ${daysRemaining.abs()} gün önce sona erdi.',
+    };
     final text =
         'RST Dolapdere sözleşme hatırlatması: '
         '${customer?.name ?? 'Kiracı'} kiracısının ${space?.name ?? 'Reklam alanı'} '
-        'sözleşmesi ${DateFormat('dd.MM.yyyy').format(contract.endDate)} tarihinde sona eriyor.';
+        'sözleşmesi ${DateFormat('dd.MM.yyyy').format(contract.endDate)} tarihinde sona eriyor. '
+        '$remainingText';
     final uri = Uri.https('wa.me', '/$phone', {'text': text});
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       messenger?.showSnackBar(
@@ -102,7 +68,9 @@ class NotificationScreen extends StatelessWidget {
         final contracts =
             store.activeContracts
                 .where(
-                  (contract) => DateHelper.daysUntil(contract.endDate) <= 10,
+                  (contract) =>
+                      DateHelper.daysUntil(contract.endDate) <=
+                      store.reminderOffsets.reduce((a, b) => a > b ? a : b),
                 )
                 .toList()
               ..sort((a, b) => a.endDate.compareTo(b.endDate));
@@ -129,7 +97,7 @@ class NotificationScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '10, 5 ve son gün hatırlatmaları',
+                'Seçilen günlerde sözleşme hatırlatmaları',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -172,10 +140,9 @@ class NotificationScreen extends StatelessWidget {
                     spaceName:
                         store.adSpaceFor(contract.adSpaceId)?.name ??
                         'Reklam alanı',
-                    showEmail: store.emailRemindersEnabled,
-                    showWhatsapp: store.whatsappRemindersEnabled,
-                    onEmail: () => _openCustomerEmail(context, contract),
+                    showWhatsapp: user?.role == AppRole.admin,
                     onWhatsapp: () => _openWhatsApp(context, contract),
+                    reminderOffsets: store.reminderOffsets,
                     onReview: () => onReviewContract?.call(contract.id),
                   ),
                 ),
@@ -192,20 +159,18 @@ class _ReminderCard extends StatelessWidget {
     required this.contract,
     required this.customer,
     required this.spaceName,
-    required this.showEmail,
     required this.showWhatsapp,
-    required this.onEmail,
     required this.onWhatsapp,
+    required this.reminderOffsets,
     required this.onReview,
   });
 
   final ContractModel contract;
   final CustomerModel? customer;
   final String spaceName;
-  final bool showEmail;
   final bool showWhatsapp;
-  final VoidCallback onEmail;
   final VoidCallback onWhatsapp;
+  final List<int> reminderOffsets;
   final VoidCallback onReview;
 
   @override
@@ -257,7 +222,11 @@ class _ReminderCard extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  days == 0 ? 'Bugün' : '$days gün',
+                  days == 0
+                      ? 'Bugün'
+                      : days > 0
+                      ? '$days gün'
+                      : '${days.abs()} gün geçti',
                   style: const TextStyle(
                     color: AppColors.danger,
                     fontWeight: FontWeight.w600,
@@ -278,52 +247,24 @@ class _ReminderCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final threshold in [10, 5, 0])
+                for (final threshold in reminderOffsets)
                   _ReminderChip(
                     label: threshold == 0 ? 'Son gün' : '$threshold gün kala',
                     active: days <= threshold,
                   ),
               ],
             ),
-            if (showEmail ||
-                showWhatsapp ||
-                (customer?.email ?? '').trim().isNotEmpty ||
-                (customer?.phone ?? '').trim().isNotEmpty) ...[
+            if (showWhatsapp && (customer?.phone ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (showEmail)
-                    const Chip(
-                      avatar: Icon(
-                        Icons.mark_email_read_outlined,
-                        size: 16,
-                        color: AppColors.success,
-                      ),
-                      label: Text('Otomatik e-posta açık'),
-                    ),
-                  if (showWhatsapp)
-                    const Chip(
-                      avatar: Icon(
-                        Icons.mark_chat_read_outlined,
-                        size: 16,
-                        color: AppColors.success,
-                      ),
-                      label: Text('Otomatik WhatsApp açık'),
-                    ),
-                  if ((customer?.email ?? '').trim().isNotEmpty)
-                    OutlinedButton.icon(
-                      onPressed: onEmail,
-                      icon: const Icon(Icons.email_outlined),
-                      label: const Text('Müşteriye e-posta'),
-                    ),
-                  if ((customer?.phone ?? '').trim().isNotEmpty)
-                    OutlinedButton.icon(
-                      onPressed: onWhatsapp,
-                      icon: const Icon(Icons.chat_outlined),
-                      label: const Text('WhatsApp'),
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: onWhatsapp,
+                    icon: const Icon(Icons.chat_outlined),
+                    label: const Text('Kiracıya WhatsApp gönder'),
+                  ),
                 ],
               ),
             ],

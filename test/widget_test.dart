@@ -14,6 +14,7 @@ import 'package:dere_sozlesme_takip/core/utils/contract_date_helper.dart';
 import 'package:dere_sozlesme_takip/features/notifications/screens/notification_screen.dart';
 import 'package:dere_sozlesme_takip/main.dart';
 import 'package:dere_sozlesme_takip/models/ad_space_model.dart';
+import 'package:dere_sozlesme_takip/models/app_user.dart';
 import 'package:dere_sozlesme_takip/models/contract_model.dart';
 import 'package:dere_sozlesme_takip/models/customer_model.dart';
 
@@ -154,51 +155,91 @@ void main() {
     },
   );
 
-  testWidgets(
-    'manual customer notification stays available on a narrow phone screen',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(320, 720);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      SharedPreferences.setMockInitialValues({});
-      final store = await AppStore.initialize();
-      final today = DateTime.now();
-      await store.saveCustomer(
-        const CustomerModel(
-          id: 'customer-manual',
-          name: 'Kiracı Uzun Adı',
-          email: 'tenant@example.com',
-          phone: '+90 555 123 45 67',
-        ),
-      );
-      await store.saveAdSpace(
-        const AdSpaceModel(
-          id: 'space-manual',
-          name: 'Dar Ekranda Uzun Pano Adı',
-        ),
-      );
-      await store.saveContract(
-        ContractModel(
-          id: 'contract-manual',
-          customerId: 'customer-manual',
-          adSpaceId: 'space-manual',
-          startDate: today.subtract(const Duration(days: 30)),
-          endDate: today.add(const Duration(days: 5)),
-        ),
-      );
+  testWidgets('WhatsApp sending is hidden without an admin role', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppStore.initialize();
+    final today = DateTime.now();
+    await store.saveCustomer(
+      const CustomerModel(
+        id: 'customer-manual',
+        name: 'Kiracı Uzun Adı',
+        email: 'tenant@example.com',
+        phone: '+90 555 123 45 67',
+      ),
+    );
+    await store.saveAdSpace(
+      const AdSpaceModel(id: 'space-manual', name: 'Dar Ekranda Uzun Pano Adı'),
+    );
+    await store.saveContract(
+      ContractModel(
+        id: 'contract-manual',
+        customerId: 'customer-manual',
+        adSpaceId: 'space-manual',
+        startDate: today.subtract(const Duration(days: 30)),
+        endDate: today.add(const Duration(days: 5)),
+      ),
+    );
 
-      await tester.pumpWidget(RSTDolapdereApp(store: store));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Bildirimler').first);
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(RSTDolapdereApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bildirimler').first);
+    await tester.pumpAndSettle();
 
-      expect(find.text('Müşteriye e-posta'), findsOneWidget);
-      expect(find.text('WhatsApp'), findsOneWidget);
-      expect(find.text('Otomatik e-posta açık'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.text('Kiracıya WhatsApp gönder'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('admin can open the tenant WhatsApp reminder action', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await AppStore.initialize();
+    final today = DateTime.now();
+    await store.saveCustomer(
+      const CustomerModel(
+        id: 'customer-admin',
+        name: 'Kiracı',
+        phone: '+90 555 123 45 67',
+      ),
+    );
+    await store.saveAdSpace(
+      const AdSpaceModel(id: 'space-admin', name: 'Pano'),
+    );
+    await store.saveContract(
+      ContractModel(
+        id: 'contract-admin',
+        customerId: 'customer-admin',
+        adSpaceId: 'space-admin',
+        startDate: today.subtract(const Duration(days: 30)),
+        endDate: today.add(const Duration(days: 5)),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NotificationScreen(
+            store: store,
+            user: const AppUser(
+              uid: 'admin',
+              username: 'admin',
+              role: AppRole.admin,
+              isActive: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kiracıya WhatsApp gönder'), findsOneWidget);
+  });
 
   testWidgets('contracts expose filters, ended menu, and renewal actions', (
     tester,
@@ -238,18 +279,5 @@ void main() {
       find.byTooltip('Görünen sözleşmeleri PDF dışa aktar'),
       findsOneWidget,
     );
-  });
-
-  test('customer reminder mail body encodes spaces as percent escapes', () {
-    final uri = buildCustomerReminderEmailUri(
-      email: 'tenant@example.com',
-      subject: 'Sözleşme bitiş hatırlatması',
-      body: 'Merhaba Kiracı,\n\nPano adı sözleşmesi sona eriyor.',
-    );
-
-    expect(uri.scheme, 'mailto');
-    expect(uri.toString(), contains('%20'));
-    expect(uri.toString(), isNot(contains('+')));
-    expect(uri.queryParameters['body'], contains('Merhaba Kiracı'));
   });
 }

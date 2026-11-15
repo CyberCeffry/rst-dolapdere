@@ -14,6 +14,7 @@ void main() {
   test('theme preference persists across app store instances', () async {
     final store = await AppStore.initialize();
     expect(store.themeMode.value, ThemeMode.system);
+    expect(store.windowsRemindersEnabled, isFalse);
 
     await store.setThemeMode(ThemeMode.dark);
     store.dispose();
@@ -89,25 +90,42 @@ void main() {
     );
   });
 
-  test('manager notification contacts persist on the device', () async {
+  test('reminder days and workdays persist on the device', () async {
     final store = await AppStore.initialize();
     await store.saveReminderSettings(
       phone: true,
-      email: false,
-      whatsapp: false,
       windows: true,
       reminderMinutes: 510,
-    );
-    await store.saveManagerContacts(
-      email: 'yonetici@example.com',
-      whatsapp: '+90 555 123 45 67',
+      reminderOffsets: [21, 3],
+      workingDays: [1, 2, 3, 4],
     );
 
     final restored = await AppStore.initialize();
-    expect(restored.managerEmail, 'yonetici@example.com');
-    expect(restored.managerWhatsapp, '+90 555 123 45 67');
     expect(restored.windowsRemindersEnabled, isTrue);
     expect(restored.reminderTimeMinutes, 510);
+    expect(restored.reminderOffsets, [21, 3]);
+    expect(restored.workingDays, [1, 2, 3, 4]);
+  });
+
+  test(
+    'reminder settings require at least one supported reminder day',
+    () async {
+      final store = await AppStore.initialize();
+      await expectLater(
+        store.saveReminderSettings(phone: true, reminderOffsets: []),
+        throwsArgumentError,
+      );
+      expect(store.reminderOffsets, [10, 5, 0]);
+    },
+  );
+
+  test('workday settings require at least one valid weekday', () async {
+    final store = await AppStore.initialize();
+    await expectLater(
+      store.saveReminderSettings(phone: true, workingDays: []),
+      throwsArgumentError,
+    );
+    expect(store.workingDays, [1, 2, 3, 4, 5]);
   });
 
   test('finalized contracts cannot be reopened under the same id', () async {

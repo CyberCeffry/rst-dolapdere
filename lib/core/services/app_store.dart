@@ -33,16 +33,12 @@ class AppStore extends ChangeNotifier {
 
     phoneRemindersEnabled =
         _preferences.getBool('phoneRemindersEnabled') ?? true;
-    emailRemindersEnabled =
-        _preferences.getBool('emailRemindersEnabled') ?? false;
-    whatsappRemindersEnabled =
-        _preferences.getBool('whatsappRemindersEnabled') ?? false;
     windowsRemindersEnabled =
         _preferences.getBool('windowsRemindersEnabled') ?? false;
+    reminderOffsets = _readReminderOffsets();
+    workingDays = _readWorkingDays();
 
     reminderTimeMinutes = _preferences.getInt('reminderTimeMinutes') ?? 540;
-    managerEmail = _preferences.getString('managerEmail') ?? '';
-    managerWhatsapp = _preferences.getString('managerWhatsapp') ?? '';
   }
 
   static const _workspaceId = 'rst_dolapdere';
@@ -66,14 +62,22 @@ class AppStore extends ChangeNotifier {
   bool _isSyncing = false;
 
   bool phoneRemindersEnabled = true;
-  bool emailRemindersEnabled = false;
-  bool whatsappRemindersEnabled = false;
   bool windowsRemindersEnabled = false;
 
   int reminderTimeMinutes = 540;
+  List<int> reminderOffsets = [10, 5, 0];
+  List<int> workingDays = [1, 2, 3, 4, 5];
 
-  String managerEmail = '';
-  String managerWhatsapp = '';
+  static const availableReminderOffsets = [30, 21, 14, 10, 7, 5, 3, 1, 0];
+  static const weekdayLabels = {
+    DateTime.monday: 'Pazartesi',
+    DateTime.tuesday: 'Salı',
+    DateTime.wednesday: 'Çarşamba',
+    DateTime.thursday: 'Perşembe',
+    DateTime.friday: 'Cuma',
+    DateTime.saturday: 'Cumartesi',
+    DateTime.sunday: 'Pazar',
+  };
   String? syncError;
 
   static Future<AppStore> initialize({
@@ -116,6 +120,34 @@ class AppStore extends ChangeNotifier {
       .doc(_workspaceId)
       .collection('settings')
       .doc('reminders');
+
+  List<int> _readReminderOffsets() {
+    final saved = _preferences.getStringList('reminderOffsets');
+    if (saved == null) return [10, 5, 0];
+    final values =
+        saved
+            .map(int.tryParse)
+            .whereType<int>()
+            .where(availableReminderOffsets.contains)
+            .toSet()
+            .toList()
+          ..sort((a, b) => b.compareTo(a));
+    return values.isEmpty ? [10, 5, 0] : values;
+  }
+
+  List<int> _readWorkingDays() {
+    final saved = _preferences.getStringList('workingDays');
+    if (saved == null) return [1, 2, 3, 4, 5];
+    final values =
+        saved
+            .map(int.tryParse)
+            .whereType<int>()
+            .where(weekdayLabels.containsKey)
+            .toSet()
+            .toList()
+          ..sort();
+    return values.isEmpty ? [1, 2, 3, 4, 5] : values;
+  }
 
   List<T> _readList<T>(String key, T Function(Map<String, dynamic>) decode) {
     final raw = _preferences.getString(key);
@@ -382,51 +414,63 @@ class AppStore extends ChangeNotifier {
 
   Map<String, dynamic> get _settingsJson => {
     'phoneRemindersEnabled': phoneRemindersEnabled,
-    'emailRemindersEnabled': emailRemindersEnabled,
-    'whatsappRemindersEnabled': whatsappRemindersEnabled,
     'windowsRemindersEnabled': windowsRemindersEnabled,
     'reminderTimeMinutes': reminderTimeMinutes,
-    'managerEmail': managerEmail,
-    'managerWhatsapp': managerWhatsapp,
+    'reminderOffsets': reminderOffsets,
+    'workingDays': workingDays,
   };
 
   Future<void> _applySettings(Map<String, dynamic> values) async {
     phoneRemindersEnabled =
         values['phoneRemindersEnabled'] as bool? ?? phoneRemindersEnabled;
 
-    emailRemindersEnabled =
-        values['emailRemindersEnabled'] as bool? ?? emailRemindersEnabled;
-
-    whatsappRemindersEnabled =
-        values['whatsappRemindersEnabled'] as bool? ?? whatsappRemindersEnabled;
-
     windowsRemindersEnabled =
         values['windowsRemindersEnabled'] as bool? ?? windowsRemindersEnabled;
 
     reminderTimeMinutes =
         (values['reminderTimeMinutes'] as num?)?.toInt() ?? reminderTimeMinutes;
+    final configuredOffsets = values['reminderOffsets'];
+    if (configuredOffsets is List) {
+      final parsedOffsets =
+          configuredOffsets
+              .whereType<num>()
+              .map((value) => value.toInt())
+              .where(availableReminderOffsets.contains)
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+      if (parsedOffsets.isNotEmpty) reminderOffsets = parsedOffsets;
+    }
 
-    managerEmail = values['managerEmail'] as String? ?? managerEmail;
-    managerWhatsapp = values['managerWhatsapp'] as String? ?? managerWhatsapp;
+    final configuredWorkingDays = values['workingDays'];
+    if (configuredWorkingDays is List) {
+      final parsedDays =
+          configuredWorkingDays
+              .whereType<num>()
+              .map((value) => value.toInt())
+              .where(weekdayLabels.containsKey)
+              .toSet()
+              .toList()
+            ..sort();
+      if (parsedDays.isNotEmpty) workingDays = parsedDays;
+    }
 
     await _preferences.setBool('phoneRemindersEnabled', phoneRemindersEnabled);
-
-    await _preferences.setBool('emailRemindersEnabled', emailRemindersEnabled);
-
-    await _preferences.setBool(
-      'whatsappRemindersEnabled',
-      whatsappRemindersEnabled,
-    );
-
     await _preferences.setBool(
       'windowsRemindersEnabled',
       windowsRemindersEnabled,
     );
 
     await _preferences.setInt('reminderTimeMinutes', reminderTimeMinutes);
-
-    await _preferences.setString('managerEmail', managerEmail);
-    await _preferences.setString('managerWhatsapp', managerWhatsapp);
+    await _preferences.setStringList(
+      'reminderOffsets',
+      reminderOffsets.map((offset) => offset.toString()).toList(),
+    );
+    await _preferences.setStringList(
+      'workingDays',
+      workingDays.map((weekday) => weekday.toString()).toList(),
+    );
+    notifyListeners();
   }
 
   Future<void> _writeCloudSettings() async {
@@ -716,43 +760,62 @@ class AppStore extends ChangeNotifier {
 
   Future<void> saveReminderSettings({
     required bool phone,
-    required bool email,
-    required bool whatsapp,
     bool? windows,
     int? reminderMinutes,
+    List<int>? reminderOffsets,
+    List<int>? workingDays,
   }) async {
+    List<int>? selectedOffsets;
+    if (reminderOffsets != null) {
+      selectedOffsets =
+          reminderOffsets
+              .where(availableReminderOffsets.contains)
+              .toSet()
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
+      if (selectedOffsets.isEmpty) {
+        throw ArgumentError.value(
+          reminderOffsets,
+          'reminderOffsets',
+          'At least one valid reminder day must be selected.',
+        );
+      }
+    }
+    List<int>? selectedWorkingDays;
+    if (workingDays != null) {
+      selectedWorkingDays =
+          workingDays.where(weekdayLabels.containsKey).toSet().toList()..sort();
+      if (selectedWorkingDays.isEmpty) {
+        throw ArgumentError.value(
+          workingDays,
+          'workingDays',
+          'At least one valid weekday must be selected.',
+        );
+      }
+    }
+
     phoneRemindersEnabled = phone;
-    emailRemindersEnabled = email;
-    whatsappRemindersEnabled = whatsapp;
     windowsRemindersEnabled = windows ?? windowsRemindersEnabled;
 
     reminderTimeMinutes = reminderMinutes ?? reminderTimeMinutes;
+    if (selectedOffsets != null) this.reminderOffsets = selectedOffsets;
+    if (selectedWorkingDays != null) this.workingDays = selectedWorkingDays;
 
     await _preferences.setBool('phoneRemindersEnabled', phone);
-    await _preferences.setBool('emailRemindersEnabled', email);
-    await _preferences.setBool('whatsappRemindersEnabled', whatsapp);
-
     await _preferences.setBool(
       'windowsRemindersEnabled',
       windowsRemindersEnabled,
     );
 
     await _preferences.setInt('reminderTimeMinutes', reminderTimeMinutes);
-
-    unawaited(_writeCloudSettings());
-
-    notifyListeners();
-  }
-
-  Future<void> saveManagerContacts({
-    required String email,
-    required String whatsapp,
-  }) async {
-    managerEmail = email.trim();
-    managerWhatsapp = whatsapp.trim();
-
-    await _preferences.setString('managerEmail', managerEmail);
-    await _preferences.setString('managerWhatsapp', managerWhatsapp);
+    await _preferences.setStringList(
+      'reminderOffsets',
+      this.reminderOffsets.map((offset) => offset.toString()).toList(),
+    );
+    await _preferences.setStringList(
+      'workingDays',
+      this.workingDays.map((weekday) => weekday.toString()).toList(),
+    );
 
     unawaited(_writeCloudSettings());
 

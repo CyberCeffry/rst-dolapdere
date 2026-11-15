@@ -150,9 +150,7 @@ class _AuthGateState extends State<_AuthGate> {
       _mainLayoutKey.currentState?.openContract(contractId);
     });
     try {
-      await ReminderService.instance.initialize(
-        windowsEnabled: store.windowsRemindersEnabled,
-      );
+      await ReminderService.instance.initialize();
       await ReminderService.instance.sync(store);
     } catch (_) {
       // Sign-in remains available if device reminders are not configured.

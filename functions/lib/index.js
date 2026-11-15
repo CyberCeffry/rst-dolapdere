@@ -2,21 +2,9 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
-import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import nodemailer from 'nodemailer';
-import { deliveryId, isReminderTime, reminderOffset } from './reminderSchedule.js';
 import { canAssignResponsible } from './assignmentPolicy.js';
 initializeApp();
-const smtpHost = defineSecret('SMTP_HOST');
-const smtpPort = defineSecret('SMTP_PORT');
-const smtpUser = defineSecret('SMTP_USER');
-const smtpPassword = defineSecret('SMTP_PASSWORD');
-const mailFrom = defineSecret('MAIL_FROM');
-const whatsappToken = defineSecret('WHATSAPP_ACCESS_TOKEN');
-const whatsappPhoneNumberId = defineSecret('WHATSAPP_PHONE_NUMBER_ID');
-const whatsappTemplateName = defineSecret('WHATSAPP_TEMPLATE_NAME');
 const workspaceId = 'rst_dolapdere';
 const usernameDomain = 'login.rst-dolapdere.invalid';
 async function caller(request) {
@@ -80,7 +68,6 @@ export const adminCreateUser = onCall({ region: 'europe-west1' }, async (request
             notificationPreferences: {
                 inApp: true,
                 push: true,
-                email: true,
             },
             assignedContractIds: [],
             assignedCustomerIds: [],
@@ -162,7 +149,7 @@ export const adminUpdateUser = onCall({ region: 'europe-west1' }, async (request
 export const updateOwnNotificationPreferences = onCall({ region: 'europe-west1' }, async (request) => {
     const user = await caller(request);
     const submitted = request.data?.preferences;
-    const allowed = ['inApp', 'push', 'email'];
+    const allowed = ['inApp', 'push'];
     if (!submitted || Object.keys(submitted).some((key) => !allowed.includes(key)) ||
         Object.values(submitted).some((value) => typeof value !== 'boolean')) {
         throw new HttpsError('invalid-argument', 'Bildirim tercihleri geçersiz.');
@@ -516,7 +503,6 @@ export const setContractActive = onCall({ region: 'europe-west1' }, async (reque
 });
 export const sendUserNotification = onCall({
     region: 'europe-west1',
-    secrets: [smtpHost, smtpPort, smtpUser, smtpPassword, mailFrom],
 }, async (request) => {
     await requireManager(request);
     const userId = String(request.data?.userId ?? '');
@@ -544,17 +530,6 @@ export const sendUserNotification = onCall({
             tokens,
             notification: { title, body: message },
         });
-    const email = String(profile.data()?.email ?? '').trim();
-    if (preferences.email !== false && email) {
-        const port = Number(smtpPort.value());
-        const transporter = nodemailer.createTransport({
-            host: smtpHost.value(),
-            port,
-            secure: port === 465,
-            auth: { user: smtpUser.value(), pass: smtpPassword.value() },
-        });
-        await transporter.sendMail({ from: mailFrom.value(), to: email, subject: title, text: message });
-    }
     return { ok: true };
 });
 function parseDate(value) {
@@ -568,171 +543,3 @@ function parseDate(value) {
     }
     return null;
 }
-function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, (character) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-    })[character]);
-}
-async function sendOnce(id, channel, send) {
-    const db = getFirestore();
-    const reference = db
-        .collection('workspaces')
-        .doc(workspaceId)
-        .collection('reminderDeliveries')
-        .doc(id);
-    const claimed = await db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(reference);
-        if (snapshot.data()?.status === 'sent')
-            return false;
-        transaction.set(reference, {
-            channel,
-            status: 'sending',
-            updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-        return true;
-    });
-    if (!claimed)
-        return;
-    try {
-        await send();
-        await reference.set({
-            status: 'sent',
-            sentAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-    }
-    catch (error) {
-        await reference.set({
-            status: 'failed',
-            error: String(error).slice(0, 500),
-            updatedAt: FieldValue.serverTimestamp(),
-        }, { merge: true });
-        throw error;
-    }
-}
-async function sendEmail(to, details) {
-    const port = Number(smtpPort.value());
-    const transporter = nodemailer.createTransport({
-        host: smtpHost.value(),
-        port,
-        secure: port === 465,
-        auth: { user: smtpUser.value(), pass: smtpPassword.value() },
-    });
-    const timing = details.offset === 0 ? 'bugün sona eriyor' : `${details.offset} gün sonra sona eriyor`;
-    const text = [
-        'DST Dolapdere sözleşme hatırlatması',
-        '',
-        `Kiracı: ${details.customer}`,
-        `Reklam alanı: ${details.adSpace}`,
-        `Bitiş tarihi: ${details.endDate}`,
-        `Sözleşme ${timing}.`,
-    ].join('\n');
-    await transporter.sendMail({
-        from: mailFrom.value(),
-        to,
-        subject: `Sözleşme hatırlatması: ${details.adSpace}`,
-        text,
-        html: `<p>DST Dolapdere sözleşme hatırlatması</p><p><b>${escapeHtml(details.adSpace)}</b> alanındaki sözleşme ${escapeHtml(timing)}.</p><p>Kiracı: ${escapeHtml(details.customer)}<br>Bitiş: ${escapeHtml(details.endDate)}</p>`,
-    });
-}
-async function sendWhatsApp(to, details) {
-    const phone = to.replace(/[^0-9]/g, '');
-    if (phone.length < 8)
-        throw new Error('WhatsApp alıcı numarası geçersiz.');
-    const timing = details.offset === 0 ? 'son gün' : `${details.offset} gün kala`;
-    const response = await fetch(`https://graph.facebook.com/v22.0/${whatsappPhoneNumberId.value()}/messages`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${whatsappToken.value()}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: phone,
-            type: 'template',
-            template: {
-                name: whatsappTemplateName.value(),
-                language: { code: 'tr' },
-                components: [{
-                        type: 'body',
-                        parameters: [
-                            { type: 'text', text: details.customer },
-                            { type: 'text', text: details.adSpace },
-                            { type: 'text', text: details.endDate },
-                            { type: 'text', text: timing },
-                        ],
-                    }],
-            },
-        }),
-    });
-    if (!response.ok)
-        throw new Error(`WhatsApp API ${response.status}: ${await response.text()}`);
-}
-export const sendContractReminders = onSchedule({
-    schedule: '*/5 * * * *',
-    timeZone: 'Europe/Istanbul',
-    region: 'europe-west1',
-    timeoutSeconds: 300,
-    secrets: [
-        smtpHost, smtpPort, smtpUser, smtpPassword, mailFrom,
-        whatsappToken, whatsappPhoneNumberId, whatsappTemplateName,
-    ],
-}, async () => {
-    const db = getFirestore();
-    const workspace = db.collection('workspaces').doc(workspaceId);
-    const settingsSnapshot = await workspace.collection('settings').doc('reminders').get();
-    const settings = settingsSnapshot.data() ?? {};
-    const reminderMinutes = Number(settings.reminderTimeMinutes ?? 540);
-    if (!isReminderTime(new Date(), reminderMinutes))
-        return;
-    const emailEnabled = settings.emailRemindersEnabled === true;
-    const whatsappEnabled = settings.whatsappRemindersEnabled === true;
-    if (!emailEnabled && !whatsappEnabled)
-        return;
-    const managerEmail = String(settings.managerEmail ?? '').trim();
-    const managerWhatsapp = String(settings.managerWhatsapp ?? '').trim();
-    if (emailEnabled && !managerEmail)
-        throw new Error('Yönetici e-posta adresi ayarlanmamış.');
-    if (whatsappEnabled && !managerWhatsapp)
-        throw new Error('Yönetici WhatsApp numarası ayarlanmamış.');
-    const [contractSnapshot, customersSnapshot, spacesSnapshot] = await Promise.all([
-        workspace.collection('contracts').where('isActive', '==', true).get(),
-        workspace.collection('customers').get(),
-        workspace.collection('adSpaces').get(),
-    ]);
-    const customers = new Map(customersSnapshot.docs.map((doc) => [doc.id, doc.data()]));
-    const spaces = new Map(spacesSnapshot.docs.map((doc) => [doc.id, doc.data()]));
-    const now = new Date();
-    for (const document of contractSnapshot.docs) {
-        const contract = { ...document.data(), id: document.id };
-        if (contract.isFinalized)
-            continue;
-        const endDate = parseDate(contract.endDate);
-        if (!endDate)
-            continue;
-        const offset = reminderOffset(endDate, now);
-        if (offset === null)
-            continue;
-        const customer = customers.get(String(contract.customerId ?? '')) ?? {};
-        const adSpace = spaces.get(String(contract.adSpaceId ?? '')) ?? {};
-        const details = {
-            customer: String(customer.name ?? 'Kiracı'),
-            adSpace: String(adSpace.name ?? 'Reklam alanı'),
-            endDate: new Intl.DateTimeFormat('tr-TR', {
-                timeZone: 'Europe/Istanbul',
-                day: '2-digit', month: '2-digit', year: 'numeric',
-            }).format(endDate),
-            offset,
-        };
-        if (emailEnabled) {
-            await sendOnce(deliveryId(document.id, endDate, offset, 'email'), 'email', () => sendEmail(managerEmail, details));
-        }
-        if (whatsappEnabled) {
-            await sendOnce(deliveryId(document.id, endDate, offset, 'whatsapp'), 'whatsapp', () => sendWhatsApp(managerWhatsapp, details));
-        }
-    }
-});

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/app_store.dart';
 import '../../../core/services/auth_service.dart';
@@ -26,8 +27,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late final TextEditingController _emailController;
-  late final TextEditingController _whatsappController;
   late final Map<String, bool> _notificationPreferences;
 
   AppStore get store => widget.store;
@@ -35,66 +34,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _emailController = TextEditingController(text: store.managerEmail);
-    _whatsappController = TextEditingController(text: store.managerWhatsapp);
     _notificationPreferences = {
       'inApp': widget.user?.notificationPreferences['inApp'] ?? true,
       'push': widget.user?.notificationPreferences['push'] ?? true,
-      'email': widget.user?.notificationPreferences['email'] ?? true,
     };
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _whatsappController.dispose();
-    super.dispose();
   }
 
   Future<void> _save({
     bool? phone,
-    bool? email,
-    bool? whatsapp,
     bool? windows,
     int? reminderMinutes,
+    List<int>? reminderOffsets,
+    List<int>? workingDays,
   }) => store.saveReminderSettings(
     phone: phone ?? store.phoneRemindersEnabled,
-    email: email ?? store.emailRemindersEnabled,
-    whatsapp: whatsapp ?? store.whatsappRemindersEnabled,
     windows: windows,
     reminderMinutes: reminderMinutes,
+    reminderOffsets: reminderOffsets,
+    workingDays: workingDays,
   );
+
+  Future<void> _setReminderOffset(int offset, bool selected) async {
+    final next = [...store.reminderOffsets];
+    if (selected) {
+      next.add(offset);
+    } else {
+      next.remove(offset);
+    }
+    if (next.isEmpty) {
+      _showMessage('En az bir bildirim günü seçmelisiniz.');
+      return;
+    }
+    await _save(reminderOffsets: next);
+  }
+
+  Future<void> _setWorkingDay(int weekday, bool selected) async {
+    final next = [...store.workingDays];
+    if (selected) {
+      next.add(weekday);
+    } else {
+      next.remove(weekday);
+    }
+    if (next.isEmpty) {
+      _showMessage('En az bir çalışma günü seçmelisiniz.');
+      return;
+    }
+    await _save(workingDays: next);
+  }
 
   Future<void> _setWindowsNotifications(bool enabled) async {
     if (!enabled) {
       await _save(windows: false);
       return;
     }
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Windows bildirim izni'),
-        content: const Text(
-          'RST Dolapdere, yaklaşan sözleşmeler için bu Windows cihazında bildirim gösterecek. Windows Ayarları > Sistem > Bildirimler bölümünde uygulama bildirimlerini ve başlıkları açık tutun.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('İptal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Etkinleştir'),
-          ),
-        ],
-      ),
-    );
-    if (approved != true || !mounted) {
-      return;
-    }
     try {
-      await ReminderService.instance.initialize(windowsEnabled: true);
+      final opened = await launchUrl(
+        Uri.parse('ms-settings:notifications'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        throw StateError('Windows bildirim ayarları açılamadı.');
+      }
+      await ReminderService.instance.initialize();
+      await ReminderService.instance.showWindowsTestNotification();
       await _save(windows: true);
+      if (mounted) {
+        _showMessage(
+          'Windows bildirim ayarlarında RST Dolapdere bildirimlerini ve başlıkları etkinleştirin.',
+        );
+      }
     } catch (error) {
       _showMessage('Windows bildirimleri etkinleştirilemedi: $error');
     }
@@ -114,41 +122,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _save(reminderMinutes: selected.hour * 60 + selected.minute);
   }
 
-  Future<void> _setEmailReminders(bool enabled) async {
-    if (enabled && store.managerEmail.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Önce yönetici e-posta adresini kaydedin.'),
-        ),
-      );
-      return;
-    }
-    await _save(email: enabled);
-  }
-
-  Future<void> _setWhatsappReminders(bool enabled) async {
-    if (enabled && store.managerWhatsapp.trim().isEmpty) {
-      _showMessage('Önce yönetici WhatsApp numarasını kaydedin.');
-      return;
-    }
-    await _save(whatsapp: enabled);
-  }
-
   void _showMessage(String message) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _saveManagerContacts() async {
-    await store.saveManagerContacts(
-      email: _emailController.text,
-      whatsapp: _whatsappController.text,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Yönetici iletişim bilgileri kaydedildi.')),
-    );
   }
 
   Future<void> _setThemeMode(ThemeMode? mode) async {
@@ -303,12 +280,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (value) =>
                         _setPersonalNotification('push', value),
                   ),
-                  SwitchListTile(
-                    title: const Text('E-posta bildirimleri'),
-                    value: _notificationPreferences['email']!,
-                    onChanged: (value) =>
-                        _setPersonalNotification('email', value),
-                  ),
                   StreamBuilder<List<Map<String, dynamic>>>(
                     stream: widget.authService!.watchInbox(widget.user!.uid),
                     builder: (context, snapshot) {
@@ -369,174 +340,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
               currentRole: widget.user!.role,
             ),
           ],
-          if (widget.user?.role != AppRole.supervisor) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Bildirim tercihleri',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Yönetici iletişim bilgileri',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Otomatik hatırlatmalar bu e-posta ve WhatsApp numarasına gönderilir.',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Yönetici e-posta adresi',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _whatsappController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Yönetici WhatsApp numarası',
-                        hintText: '+90 5xx xxx xx xx',
-                        prefixIcon: Icon(Icons.chat_outlined),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton.icon(
-                        onPressed: _saveManagerContacts,
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('İletişim bilgilerini kaydet'),
-                      ),
-                    ),
-                  ],
+          const SizedBox(height: 16),
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(
+                    Icons.notifications_active_outlined,
+                    color: AppColors.primary,
+                  ),
+                  title: const Text('Telefon bildirimi'),
+                  subtitle: Text(
+                    'Android ve iOS: ${_reminderOffsetLabel(store.reminderOffsets)}',
+                  ),
+                  value: store.phoneRemindersEnabled,
+                  onChanged: (value) => _save(phone: value),
                 ),
-              ),
+                if (defaultTargetPlatform == TargetPlatform.windows) ...[
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    secondary: const Icon(
+                      Icons.desktop_windows_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Windows masaüstü bildirimi'),
+                    subtitle: const Text(
+                      'Açınca Windows bildirim ayarları açılır; izin Windows tarafından yönetilir',
+                    ),
+                    value: store.windowsRemindersEnabled,
+                    onChanged: _setWindowsNotifications,
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: 16),
-            Card(
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SwitchListTile(
-                    secondary: const Icon(
-                      Icons.notifications_active_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Telefon bildirimi'),
-                    subtitle: const Text(
-                      'Android ve iOS: bitişten 10, 5 ve 0 gün önce',
-                    ),
-                    value: store.phoneRemindersEnabled,
-                    onChanged: (value) => _save(phone: value),
+                  const Text(
+                    'Çalışma günleri',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    secondary: const Icon(
-                      Icons.email_outlined,
-                      color: AppColors.primary,
+                  const SizedBox(height: 4),
+                  Text(
+                    'Hatırlatma seçili olmayan güne denk gelirse sonraki çalışma gününe ertelenir.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    title: const Text('Otomatik e-posta bildirimi'),
-                    subtitle: const Text(
-                      '10, 5 ve son gün; uygulama kapalı olsa da gönderilir',
-                    ),
-                    value: store.emailRemindersEnabled,
-                    onChanged: _setEmailReminders,
                   ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    secondary: const Icon(
-                      Icons.chat_outlined,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('WhatsApp bildirimi'),
-                    subtitle: const Text(
-                      '10, 5 ve son gün otomatik WhatsApp mesajı',
-                    ),
-                    value: store.whatsappRemindersEnabled,
-                    onChanged: _setWhatsappReminders,
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final entry in AppStore.weekdayLabels.entries)
+                        FilterChip(
+                          label: Text(entry.value),
+                          selected: store.workingDays.contains(entry.key),
+                          onSelected: (selected) =>
+                              _setWorkingDay(entry.key, selected),
+                        ),
+                    ],
                   ),
-                  if (defaultTargetPlatform == TargetPlatform.windows) ...[
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      secondary: const Icon(
-                        Icons.desktop_windows_outlined,
-                        color: AppColors.primary,
-                      ),
-                      title: const Text('Windows masaüstü bildirimi'),
-                      subtitle: const Text(
-                        'Windows bildirim merkezinde yaklaşan sözleşme hatırlatmaları göster',
-                      ),
-                      value: store.windowsRemindersEnabled,
-                      onChanged: _setWindowsNotifications,
-                    ),
-                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.schedule, color: AppColors.primary),
-                title: const Text('Bildirim gönderme saati'),
-                subtitle: Text(
-                  TimeOfDay(
-                    hour: store.reminderTimeMinutes ~/ 60,
-                    minute: store.reminderTimeMinutes % 60,
-                  ).format(context),
-                ),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: _pickReminderTime,
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Bildirim günleri',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Sözleşme bitişinden kaç gün önce hatırlatma gönderilsin?',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final offset in AppStore.availableReminderOffsets)
+                        FilterChip(
+                          label: Text(offset == 0 ? 'Son gün' : '$offset gün'),
+                          selected: store.reminderOffsets.contains(offset),
+                          onSelected: (selected) =>
+                              _setReminderOffset(offset, selected),
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            Card(
-              child: ListTile(
-                leading: Icon(
-                  store.cloudSyncEnabled
-                      ? Icons.cloud_done_outlined
-                      : Icons.cloud_off_outlined,
-                  color: store.syncError == null
-                      ? AppColors.primary
-                      : AppColors.danger,
-                ),
-                title: const Text('Firestore veritabanı'),
-                subtitle: Text(
-                  !store.cloudSyncEnabled
-                      ? store.syncError ??
-                            'Firestore bu platformda kapalı; kayıtlar cihazda tutuluyor.'
-                      : store.syncError?.contains('permission-denied') == true
-                      ? 'Erişim reddedildi. Firebase Console’da Firestore kurallarını yayımlayın: firebase deploy --only firestore:rules --project deresozlesmetakip'
-                      : store.syncError != null
-                      ? 'Bağlantı hatası: ${store.syncError}'
-                      : store.isCloudSyncing
-                      ? 'Firestore ile eşitleniyor...'
-                      : 'Firestore bağlantısı etkin; veriler anlık eşitlenir.',
-                ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.schedule, color: AppColors.primary),
+              title: const Text('Bildirim gönderme saati'),
+              subtitle: Text(
+                TimeOfDay(
+                  hour: store.reminderTimeMinutes ~/ 60,
+                  minute: store.reminderTimeMinutes % 60,
+                ).format(context),
+              ),
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: _pickReminderTime,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                store.cloudSyncEnabled
+                    ? Icons.cloud_done_outlined
+                    : Icons.cloud_off_outlined,
+                color: store.syncError == null
+                    ? AppColors.primary
+                    : AppColors.danger,
+              ),
+              title: const Text('Firestore veritabanı'),
+              subtitle: Text(
+                !store.cloudSyncEnabled
+                    ? store.syncError ??
+                          'Firestore bu platformda kapalı; kayıtlar cihazda tutuluyor.'
+                    : store.syncError?.contains('permission-denied') == true
+                    ? 'Erişim reddedildi. Firebase Console’da Firestore kurallarını yayımlayın: firebase deploy --only firestore:rules --project deresozlesmetakip'
+                    : store.syncError != null
+                    ? 'Bağlantı hatası: ${store.syncError}'
+                    : store.isCloudSyncing
+                    ? 'Firestore ile eşitleniyor...'
+                    : 'Firestore bağlantısı etkin; veriler anlık eşitlenir.',
               ),
             ),
-          ],
+          ),
         ],
       ),
     ),
   );
+
+  String _reminderOffsetLabel(List<int> offsets) {
+    final labels = offsets
+        .map((offset) => offset == 0 ? 'son gün' : '$offset gün kala')
+        .join(', ');
+    return labels;
+  }
 }
 
 class _ChangePasswordDialog extends StatefulWidget {

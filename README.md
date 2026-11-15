@@ -4,17 +4,13 @@ Reklam alanlarini, kiracilari ve kira sozlesmelerini yonetir. Kayitlar SharedPre
 
 Firestore koleksiyonlari `workspaces/rst_dolapdere/customers`, `adSpaces`, `contracts` ve `settings/reminders` yollarindadir. Android baglantisi `android/app/google-services.json` ile eslesir. Ilk acilista cihazdaki yerel kayitlar Firestore'a birlestirilir; Firestore degisiklikleri cihaz onbellegine akar. Windows Firestore plugini desteklenmediginden Windows'ta SharedPreferences kullanilir.
 
-## Otomatik E-posta
-
-Firebase Cloud Function her 5 dakikada bir calisir, ayarlardaki Istanbul saat araligina geldiginde aktif sozlesmeleri kontrol eder. Bitise 10, 5 ve 0 gun kalinca yoneticiye e-posta/WhatsApp gonderir. Fonksiyonlar `workspaces/rst_dolapdere` altindaki ayni koleksiyonlari kullanir.
-
-Uygulamada Ayarlar'dan yonetici e-posta adresini girip **Otomatik e-posta bildirimi** anahtarini acin. Firestore'daki `reminderDeliveries` koleksiyonu yinelenen gonderimi onler.
-
 ## Cihaz Bildirimleri
 
-**Ayarlar > Bildirim gönderme saati** Android/iOS cihaz bildirimleri ve Windows bildirimleri icin saati belirler. Windows masaustu bildirimi yalnizca Windows uygulamasinda gosterilir. Anahtar ilk kez acilinca uygulama kendi izin onay penceresini gosterir; kullanici **Izin ver** demeden Windows bildirimi etkinlesmez. Bu, uygulama ici onaydir; Windows ayarlarinda bildirimler sistem genelinde kapaliysa Windows sistem ayarlarindan da izin verilmelidir. Windows uygulamasinin toast bildirimleri icin kayitli/kurulu uygulama kimligi ve Windows bildirim altyapisi gerekir.
+**Ayarlar > Bildirim günleri** sözlesme bitisinden kac gun once cihaz hatirlatmasi gonderilecegini belirler. **Çalışma günleri** seciminde isaretli olmayan bir gune denk gelen hatirlatma, sonraki isaretli gune tasinir. Bildirim metnindeki kalan gun sayisi ertelenmis gonderim tarihine gore hesaplanir; ayni sozlesmenin birden cok hatirlatmasi ayni is gunune denk gelirse tek bildirime indirilir. Varsayilan calisma gunleri Pazartesi-Cuma'dir ve en az bir gun secili kalmalidir. **Bildirim gönderme saati** cihaz bildirim saatini ayarlar.
 
-Bildirim tetikleme zamanlari Android/iOS ve Windows'ta secilen saate gore 10, 5 ve bitis gunu icin planlanir. Biten veya yaklasan sozlesme bildirimi secilince **Incele** ile sozlesme detayina gidilir.
+Hatirlatma bildirimi **Ertele...** eylemi, uygulamayi acip 5 dakika, 10 dakika, 30 dakika, 1 saat, 2 saat, 1 gun veya 2 gun sonrasi icin erteleme secenegi sunar. **Sözleşmeyi aç** bildirimi konu olan sozlesmeye, **Yaklaşanları aç** ise yaklasan sozlesmelere gider. Windows'ta bildirim uzun gosterim suresi ister; banner suresi iOS, Android ve Windows tarafindan yonetilir. Uygulama isletim sisteminin otomatik kapatma davranisini tum platformlarda engelleyemez; bildirim merkezi/notification center'da kalicilik sistem ayarlarina baglidir.
+
+Yaklaşan sözleşmeler ekranında **Kiracıya WhatsApp gönder** eylemi yalnızca admin rolüne görünür ve kayıtlı kiracı numarasıyla WhatsApp'ta mesaj taslağı açar. Mesajı göndermek için WhatsApp içinde ayrıca onay vermek gerekir. Uygulama otomatik WhatsApp ve e-posta hatırlatması göndermez.
 
 ## Sozlesme Yasam Dongusu
 
@@ -40,7 +36,7 @@ Ilk sistem yoneticisi Firebase Console > Authentication > Users bolumunde e-post
   "role": "admin",
   "isActive": true,
   "permissions": {},
-  "notificationPreferences": { "inApp": true, "push": true, "email": true },
+  "notificationPreferences": { "inApp": true, "push": true },
   "assignedContractIds": [],
   "assignedCustomerIds": [],
   "assignedAdSpaceIds": []
@@ -49,22 +45,11 @@ Ilk sistem yoneticisi Firebase Console > Authentication > Users bolumunde e-post
 
 `workspaces/rst_dolapdere/usernameIndex/yonetici` dokumanini `{ "uid": "..." }` olarak ekleyin. Ilk admin olusturma/yetki atama uygulamadan yapilmaz; boylece istemci kendisini admin yapamaz. Sonraki kullanicilar Ayarlar > Kullanıcılar ve roller panelinden eklenir. Sorumlulara modullere erisim izni verilir ve goruntuleyecekleri sozlesmelere yonetici tarafindan sorumlu atanir. Sorumlu yeni sozlesme eklediginde veya uzattiginda pozitif birim fiyat girmeli; islem yonetici onayina kadar sozlesmeye uygulanmaz. Sorumlular atanmis sozlesmeleri etkin/pasif yapabilir, silemez.
 
-Kisiye ozel e-posta bildirimi icin Functions secrets olarak SMTP bilgilerini (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`) tanimlayin. Push icin Firebase Cloud Messaging platform kurulumunu tamamlayin: iOS'ta APNs anahtari, web'de Firebase Web Push VAPID anahtari gereklidir. Android icin Firebase Messaging konfigurasyonunun `google-services.json` ile ayni projeye ait oldugunu kontrol edin. E-posta adresi olmayan kullanici uygulama ici ve push bildirimlerini alabilir.
+Push icin Firebase Cloud Messaging platform kurulumunu tamamlayin: iOS'ta APNs anahtari, web'de Firebase Web Push VAPID anahtari gereklidir. Android icin Firebase Messaging konfigurasyonunun `google-services.json` ile ayni projeye ait oldugunu kontrol edin.
 
 Guvenlik kurallarini yayinlamadan once mevcut verilerinizin `workspaces/rst_dolapdere` altinda oldugunu dogrulayin. Eski bir kurulumda belgeler `workspaces/dst_dolapdere` altindaysa, yayin oncesi Console veya guvenilir bir Admin SDK migration ile `rst_dolapdere` altina tasi. Supervisor hesaplari sadece sorumlu atandigi sozlesme, kiraci ve reklam alanlarini okuyabilir; sozlesme yazma/onay islemleri callable Functions tarafinda yetkilendirilir.
 
-## Otomatik WhatsApp
-
-WhatsApp gonderimi icin Meta WhatsApp Business Cloud API ve onayli bir mesaj sablonu gerekir:
-
-1. Meta Developer hesabinda WhatsApp Business uygulamasi ve gonderici phone number ID olusturun.
-2. WhatsApp Manager'da `dst_contract_expiry` adli, Turkce ve **dort body parametreli** sablon olusturup Meta onayina gonderin. Ornek body: `Hatirlatma: {{1}} kiracisinin {{2}} reklam alani sozlesmesi {{3}} tarihinde sona eriyor. Bu hatirlatma {{4}}.`
-3. Firebase Functions secrets olarak `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME` secret'larini tanimlayin.
-4. Uygulamada yonetici WhatsApp numarasini ulke koduyla girin ve **WhatsApp bildirimi** anahtarini acin.
-
-Mesaj, Meta Business API gonderici numarasindan yoneticinin WhatsApp numarasina gider. Alinti/yanit kurallari ve Meta ucretleri hesabiniza tabidir. Token'i Flutter koduna koymayin; Firebase Functions secret olarak saklayin.
-
-Functions'i kurup dagitmak icin `firebase login`, `cd functions`, `npm install`, sonra proje kokunde `firebase deploy --only functions` calistirin. Cloud Scheduler icin Firebase projesinde billing etkin olmalidir.
+Functions'i kurup dagitmak icin `firebase login`, `cd functions`, `npm install`, sonra proje kokunde `firebase deploy --only functions` calistirin. Onceki surumde `sendContractReminders` zamanlanmis islevi yayinlandiysa, kaldirmak icin `firebase functions:delete sendContractReminders --region=europe-west1` calistirin.
 
 ## Erisim Notu
 
@@ -72,7 +57,7 @@ Uygulama kullanici girisi olmadan acilir. `firestore.rules`, `workspaces/rst_dol
 
 Kurallari uygulamanin kullandigi Firebase projesinde etkinlestirmek icin proje kokunde `firebase deploy --only firestore:rules --project deresozlesmetakip` calistirin.
 
-Windows masaustu hatirlatmalari Ayarlar ekranindan acilir. Windows **Ayarlar > Sistem > Bildirimler** bolumunde RST Dolapdere icin bildirimleri ve basliklari etkinlestirin. Hatirlatma bildirimleri, yaklasan sozlesmeleri acma ve bildirime konu sozlesmeyi acma eylemlerini icerir.
+Windows masaustu hatirlatmalari Ayarlar ekraninda varsayilan olarak kapali gelir. Acildiginda uygulama Windows **Ayarlar > Sistem > Bildirimler** sayfasini acar ve bir test bildirimi gosterir; Windows'ta masaustu uygulamalari icin Chrome'daki gibi bir izin popup'i API'si yoktur, bildirim izni isletim sisteminden verilir. RST Dolapdere icin bildirimleri ve basliklari etkinlestirin. Uygulama Windows baslangic menusune AppUserModelID iceren bir kisayol kaydeder; Windows toast bildirimleri icin bu gereklidir.
 
 ## Uygulamayi Calistirma
 

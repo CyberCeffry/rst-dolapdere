@@ -168,7 +168,7 @@ class AuthService {
         'role': role.name,
         'isActive': isActive,
         'permissions': permissions,
-        'notificationPreferences': {'inApp': true, 'push': true, 'email': true},
+        'notificationPreferences': {'inApp': true, 'push': true},
         'assignedContractIds': <String>[],
         'assignedCustomerIds': <String>[],
         'assignedAdSpaceIds': <String>[],
