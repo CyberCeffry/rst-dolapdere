@@ -108,9 +108,24 @@ NotificationDetails _notificationDetails(
     windows: WindowsNotificationDetails(
       duration: WindowsNotificationDuration.long,
       actions: [
-        WindowsAction(content: 'Ertele...', arguments: snoozeAction),
-        WindowsAction(content: 'Sözleşmeyi aç', arguments: contractAction),
-        WindowsAction(content: 'Yaklaşanları aç', arguments: expiringAction),
+        WindowsAction(
+          content: 'Ertele...',
+          arguments: snoozeAction,
+          activationType: WindowsActivationType.foreground,
+          activationBehavior: WindowsNotificationBehavior.dismiss,
+        ),
+        WindowsAction(
+          content: 'Sözleşmeyi aç',
+          arguments: contractAction,
+          activationType: WindowsActivationType.foreground,
+          activationBehavior: WindowsNotificationBehavior.dismiss,
+        ),
+        WindowsAction(
+          content: 'Yaklaşanları aç',
+          arguments: expiringAction,
+          activationType: WindowsActivationType.foreground,
+          activationBehavior: WindowsNotificationBehavior.dismiss,
+        ),
       ],
     ),
   );
