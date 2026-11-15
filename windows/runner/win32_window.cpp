@@ -149,9 +149,35 @@ bool Win32Window::Create(const std::wstring& title,
   return OnCreate();
 }
 
+// bool Win32Window::Show() {
+//   return ShowWindow(window_handle_, SW_SHOWNORMAL);
+// }
+
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, SW_SHOWNORMAL);
+  if (window_handle_ == nullptr) {
+    return false;
+  }
+
+  // Simge durumundaysa pencereyi geri yükle.
+  ShowWindow(window_handle_, SW_RESTORE);
+
+  // Pencereyi görünür ve üst sırada tut.
+  SetWindowPos(
+      window_handle_,
+      HWND_TOP,
+      0, 0, 0, 0,
+      SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+  );
+
+  // Pencereyi etkinleştir.
+  BringWindowToTop(window_handle_);
+  SetForegroundWindow(window_handle_);
+  SetActiveWindow(window_handle_);
+  SetFocus(window_handle_);
+
+  return true;
 }
+
 
 // static
 LRESULT CALLBACK Win32Window::WndProc(HWND const window,
