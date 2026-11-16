@@ -345,11 +345,19 @@ class _ManagementScreenState extends State<ManagementScreen> {
   }
 
   Future<void> _exportAdSpaces(List<dynamic> records) async {
-    try {
-      await AdSpacePdfService.exportAdSpaces(
-        widget.store,
-        records.whereType<AdSpaceModel>().toList(),
+    final adSpaces = records.whereType<AdSpaceModel>().toList();
+
+    if (adSpaces.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dışa aktarılacak reklam alanı bulunamadı.'),
+        ),
       );
+      return;
+    }
+
+    try {
+      await AdSpacePdfService.exportAdSpaces(widget.store, adSpaces);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(

@@ -2,10 +2,11 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+// import 'package:printing/printing.dart';
 
 import '../../../core/services/app_store.dart';
 import '../../../models/contract_model.dart';
+import 'dart:io';
 
 class ContractPdfService {
   static Future<void> exportContracts(
@@ -13,11 +14,14 @@ class ContractPdfService {
     List<ContractModel> contracts,
   ) async {
     final bytes = await buildContractsPdf(store, contracts);
-    await Printing.layoutPdf(
-      name:
-          'rst-sozlesmeler-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
-      onLayout: (_) async => bytes,
+    final fileName =
+        'rst-sozlesmeleri-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf';
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}$fileName',
     );
+    await file.writeAsBytes(bytes, flush: true);
+    await Process.run('cmd', ['/c', 'start', '', file.path], runInShell: true);
+    // await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
   }
 
   static Future<Uint8List> buildContractsPdf(

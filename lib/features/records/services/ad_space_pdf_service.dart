@@ -2,7 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+// import 'package:printing/printing.dart';
+import 'dart:io';
 
 import '../../../core/services/app_store.dart';
 import '../../../core/utils/contract_remaining_time.dart';
@@ -14,11 +15,17 @@ class AdSpacePdfService {
     List<AdSpaceModel> adSpaces,
   ) async {
     final bytes = await buildAdSpacesPdf(store, adSpaces);
-    await Printing.layoutPdf(
-      name:
-          'rst-reklam-alanlari-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
-      onLayout: (_) async => bytes,
+
+    final fileName =
+        'rst-reklam-alanlari-${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}$fileName',
     );
+
+    await file.writeAsBytes(bytes, flush: true);
+
+    await Process.run('cmd', ['/c', 'start', '', file.path], runInShell: true);
   }
 
   static Future<Uint8List> buildAdSpacesPdf(
