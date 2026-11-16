@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/services/app_store.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/utils/window_focus_helper.dart';
 import '../../features/notifications/services/reminder_service.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/notifications/screens/notification_screen.dart';
@@ -115,6 +116,7 @@ class MainLayoutState extends State<MainLayout> {
   }
 
   void _handleNotificationResponse(NotificationResponse response) {
+    WindowFocusHelper.bringToFront(); // <-- Pencereyi öne getirir ve simgeden çıkarır
     final action = response.actionId ?? '';
     if (action == 'snooze' || action.startsWith('snooze:')) {
       final contractId = action.startsWith('snooze:')

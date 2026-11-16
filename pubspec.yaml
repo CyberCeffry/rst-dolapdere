@@ -1,4 +1,4 @@
-﻿name: dere_sozlesme_takip
+name: dere_sozlesme_takip
 description: 'Reklam alanÄ± ve sÃ¶zleÅŸme takip uygulamasÄ±.'
 publish_to: 'none'
 
@@ -36,6 +36,7 @@ dependencies:
   cloud_functions: ^7.0.1
   firebase_messaging: ^17.0.1
   icons_launcher: ^3.1.0
+  ffi: ^2.2.0
   # flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:

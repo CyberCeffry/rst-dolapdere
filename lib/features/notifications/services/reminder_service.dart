@@ -9,6 +9,7 @@ import '../../../core/utils/business_day_helper.dart';
 import '../../../core/utils/executable_path_stub.dart'
     if (dart.library.io) '../../../core/utils/executable_path_io.dart'
     as app_platform;
+import '../../../core/utils/window_focus_helper.dart';
 
 const _windowsAppName = 'RST Dolapdere';
 const _windowsAppUserModelId = 'RST.Dolapdere.Contracts';
@@ -145,6 +146,7 @@ class ReminderService {
   }
 
   void setReviewHandler(ValueChanged<String> handler) {
+    WindowFocusHelper.bringToFront(); // <-- Pencereyi öne getirir ve simgeden çıkarır
     _onNotificationResponse = (response) {
       final action = response.actionId ?? '';
       final contractId = action.startsWith('contract:')
