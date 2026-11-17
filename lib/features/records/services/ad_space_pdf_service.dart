@@ -76,7 +76,7 @@ class AdSpacePdfService {
               2: pw.FlexColumnWidth(1.3),
               3: pw.FlexColumnWidth(1.2),
               4: pw.FlexColumnWidth(1.2),
-              5: pw.FlexColumnWidth(1.5),
+              //5: pw.FlexColumnWidth(1.5),
             },
             children: [
               _row(

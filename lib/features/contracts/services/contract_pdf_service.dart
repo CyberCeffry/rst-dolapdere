@@ -80,7 +80,7 @@ class ContractPdfService {
               4: pw.FlexColumnWidth(1.4),
               5: pw.FlexColumnWidth(1.3),
               6: pw.FlexColumnWidth(1.1),
-              7: pw.FlexColumnWidth(1.2),
+              // 7: pw.FlexColumnWidth(1.2),
             },
             children: [
               _row(
