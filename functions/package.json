@@ -1,5 +1,5 @@
 {
-  "name": "dst-dolapdere-functions",
+  "name": "RST-dolapdere-functions",
   "private": true,
   "main": "lib/index.js",
   "type": "module",

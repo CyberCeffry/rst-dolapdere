@@ -1,4 +1,4 @@
-# DST Dolapdere Sozlesme Takip
+# RST Dolapdere Sozlesme Takip
 
 Reklam alanlarini, kiracilari ve kira sozlesmelerini yonetir. Kayitlar SharedPreferences ile cihazda onbelleklenir ve Firebase Firestore ile es zamanli calisir.
 
