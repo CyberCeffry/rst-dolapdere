@@ -42,7 +42,7 @@ class DashboardScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'RST Dolapdere reklam alanları yönetim paneline hoş geldiniz.',
+                'Dolapdere reklam alanları yönetim paneline hoş geldiniz.',
                 style: TextStyle(
                   fontSize: 14,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,

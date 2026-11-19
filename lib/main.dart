@@ -29,6 +29,9 @@ Future<void> main() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
       firestore = FirebaseFirestore.instance;
+      // Veriler zaten cihazda (SharedPreferences) tutuluyor; Firestore'un ikinci
+      // bir yerel önbelleği gereksiz iş yükü yaratıyordu.
+      firestore.settings = const Settings(persistenceEnabled: false);
     } catch (error) {
       cloudError = 'Firebase başlatılamadı: $error';
     }
