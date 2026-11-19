@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/services/app_store.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_helper.dart';
-import '../../../models/app_user.dart';
 import '../../../models/contract_model.dart';
 import '../../../models/customer_model.dart';
 
@@ -13,19 +12,16 @@ class NotificationScreen extends StatelessWidget {
   const NotificationScreen({
     super.key,
     required this.store,
-    this.user,
     this.onReviewContract,
   });
 
   final AppStore store;
-  final AppUser? user;
   final ValueChanged<String>? onReviewContract;
 
   Future<void> _openWhatsApp(
     BuildContext context,
     ContractModel contract,
   ) async {
-    if (user?.role != AppRole.admin) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     final customer = store.customerFor(contract.customerId);
     var phone = (customer?.phone ?? '').replaceAll(RegExp(r'[^0-9]'), '');
@@ -140,7 +136,7 @@ class NotificationScreen extends StatelessWidget {
                     spaceName:
                         store.adSpaceFor(contract.adSpaceId)?.name ??
                         'Reklam alanı',
-                    showWhatsapp: user?.role == AppRole.admin,
+                    showWhatsapp: true,
                     onWhatsapp: () => _openWhatsApp(context, contract),
                     reminderOffsets: store.reminderOffsets,
                     onReview: () => onReviewContract?.call(contract.id),

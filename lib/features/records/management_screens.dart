@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/services/app_store.dart';
-import '../../core/services/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/contract_date_helper.dart';
 import '../../core/utils/contract_remaining_time.dart';
@@ -11,7 +10,6 @@ import '../../core/utils/date_helper.dart';
 import '../contracts/services/contract_pdf_service.dart';
 import 'services/ad_space_pdf_service.dart';
 import '../../models/ad_space_model.dart';
-import '../../models/app_user.dart';
 import '../../models/contract_history_entry.dart';
 import '../../models/contract_model.dart';
 import '../../models/customer_model.dart';
@@ -30,7 +28,6 @@ class ManagementScreen extends StatefulWidget {
     this.showEndedContracts = false,
     this.initialContractFilter = ContractListFilter.all,
     this.initialAdSpaceFilter = AdSpaceListFilter.all,
-    this.authService,
   });
 
   final AppStore store;
@@ -38,7 +35,6 @@ class ManagementScreen extends StatefulWidget {
   final bool showEndedContracts;
   final ContractListFilter initialContractFilter;
   final AdSpaceListFilter initialAdSpaceFilter;
-  final AuthService? authService;
 
   @override
   State<ManagementScreen> createState() => _ManagementScreenState();
@@ -50,23 +46,12 @@ class _ManagementScreenState extends State<ManagementScreen> {
   late ContractListFilter _contractFilter;
   late AdSpaceListFilter _adSpaceFilter;
   bool _nearestFirst = true;
-  bool _loadingAvailableContracts = false;
-  String? _availableContractsError;
-  List<ContractModel> _availableContracts = [];
-  final Map<String, String> _availableCustomerNames = {};
-  final Map<String, String> _availableAdSpaceNames = {};
 
   @override
   void initState() {
     super.initState();
     _contractFilter = widget.initialContractFilter;
     _adSpaceFilter = widget.initialAdSpaceFilter;
-    if (widget.type == RecordType.contracts &&
-        !widget.showEndedContracts &&
-        widget.store.currentUser?.role == AppRole.supervisor &&
-        widget.authService != null) {
-      _loadAvailableContracts();
-    }
   }
 
   String get _title => switch (widget.type) {
@@ -103,15 +88,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
         : widget.store.contracts
               .where((contract) => !contract.isFinalized)
               .toList();
-    final contracts = widget.showEndedContracts
-        ? storedContracts
-        : [
-            ...storedContracts,
-            ..._availableContracts.where(
-              (available) =>
-                  !storedContracts.any((stored) => stored.id == available.id),
-            ),
-          ];
+    final contracts = storedContracts;
     if (widget.showEndedContracts) return contracts;
     final filtered = contracts.where((contract) {
       final days = DateHelper.daysUntil(contract.endDate);
@@ -136,48 +113,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
     return filtered;
   }
 
-  Future<void> _loadAvailableContracts() async {
-    final service = widget.authService;
-    if (service == null) return;
-    setState(() {
-      _loadingAvailableContracts = true;
-      _availableContractsError = null;
-    });
-    try {
-      final values = await service.listAvailableContracts();
-      if (!mounted) return;
-      setState(() {
-        _availableContracts = values
-            .map((value) => ContractModel.fromJson(value))
-            .toList();
-        _availableCustomerNames
-          ..clear()
-          ..addEntries(
-            values.map(
-              (value) => MapEntry(
-                value['id'] as String,
-                value['customerName'] as String? ?? 'Kiracı',
-              ),
-            ),
-          );
-        _availableAdSpaceNames
-          ..clear()
-          ..addEntries(
-            values.map(
-              (value) => MapEntry(
-                value['id'] as String,
-                value['adSpaceName'] as String? ?? 'Reklam alanı',
-              ),
-            ),
-          );
-      });
-    } catch (error) {
-      if (mounted) setState(() => _availableContractsError = error.toString());
-    } finally {
-      if (mounted) setState(() => _loadingAvailableContracts = false);
-    }
-  }
-
   String _searchText(dynamic record) {
     if (record is AdSpaceModel) {
       return '${record.name} ${record.location}'.toLowerCase();
@@ -188,8 +123,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
     final contract = record as ContractModel;
     final customer = widget.store.customerFor(contract.customerId);
     final space = widget.store.adSpaceFor(contract.adSpaceId);
-    return '${customer?.name ?? _availableCustomerNames[contract.id] ?? ''} '
-            '${space?.name ?? _availableAdSpaceNames[contract.id] ?? ''}'
+    return '${customer?.name ?? ''} '
+            '${space?.name ?? ''}'
         .toLowerCase();
   }
 
@@ -229,15 +164,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
       ),
     );
     if (saved == true && mounted) {
-      final isSupervisor = widget.store.currentUser?.role == AppRole.supervisor;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isSupervisor
-                ? 'Sözleşme talebi yönetici onayına gönderildi.'
-                : record == null
-                ? 'Kayıt eklendi.'
-                : 'Kayıt güncellendi.',
+            record == null ? 'Kayıt eklendi.' : 'Kayıt güncellendi.',
           ),
         ),
       );
@@ -282,40 +212,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
     builder: (context) =>
         _CustomerDetailsDialog(store: widget.store, customer: customer),
   );
-
-  Future<void> _assignResponsible(ContractModel contract) async {
-    final service = widget.authService;
-    if (service == null) return;
-    final user = widget.store.currentUser;
-    final userId = user?.role == AppRole.supervisor
-        ? user!.uid
-        : await showDialog<String>(
-            context: context,
-            builder: (context) => _AssignResponsibleDialog(
-              authService: service,
-              currentUserId: user?.uid,
-            ),
-          );
-    if (userId == null) return;
-    try {
-      await service.assignContract(
-        contractId: contract.id,
-        responsibleUserId: userId,
-      );
-      if (user?.role == AppRole.supervisor) {
-        setState(() {
-          _availableContracts.removeWhere((item) => item.id == contract.id);
-        });
-        await _loadAvailableContracts();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Sorumlu atanamadı: $error')));
-      }
-    }
-  }
 
   Future<void> _toggleContractActive(ContractModel contract) async {
     try {
@@ -474,10 +370,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
       final customer = widget.store.customerFor(contract.customerId);
       final space = widget.store.adSpaceFor(contract.adSpaceId);
       final days = DateHelper.daysUntil(contract.endDate);
-      title =
-          space?.name ?? _availableAdSpaceNames[contract.id] ?? 'Reklam alanı';
+      title = space?.name ?? 'Reklam alanı';
       subtitle =
-          '${customer?.name ?? _availableCustomerNames[contract.id] ?? 'Kiracı'} • '
+          '${customer?.name ?? 'Kiracı'} • '
           '${DateFormat('dd.MM.yyyy').format(contract.startDate)} - '
           '${DateFormat('dd.MM.yyyy').format(contract.endDate)} • '
           '${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)} / ay'
@@ -538,8 +433,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         _showContractDetails(record);
                       case 'toggle':
                         _toggleContractActive(record);
-                      case 'assign_self':
-                        _assignResponsible(record);
                       case 'edit':
                         _edit(record);
                       case 'end':
@@ -548,8 +441,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         _renewContract(record);
                       case 'delete':
                         _delete(record);
-                      case 'assign':
-                        _assignResponsible(record);
                     }
                   } else if (record is CustomerModel && value == 'details') {
                     _showCustomerDetails(record);
@@ -560,39 +451,21 @@ class _ManagementScreenState extends State<ManagementScreen> {
                   }
                 },
                 itemBuilder: (context) {
-                  final supervisor =
-                      widget.store.currentUser?.role == AppRole.supervisor;
                   if (record is ContractModel) {
                     final ended =
                         record.isFinalized ||
                         DateHelper.daysUntil(record.endDate) < 0;
-                    final supervisor =
-                        widget.store.currentUser?.role == AppRole.supervisor;
                     return [
                       const PopupMenuItem(
                         value: 'details',
                         child: Text('Detayları görüntüle'),
                       ),
-                      if (supervisor &&
-                          record.responsibleUserId ==
-                              widget.store.currentUser?.uid)
-                        PopupMenuItem(
-                          value: 'toggle',
-                          child: Text(
-                            record.isActive ? 'Pasife al' : 'Etkinleştir',
-                          ),
-                        ),
-                      if (supervisor && record.responsibleUserId == null)
-                        const PopupMenuItem(
-                          value: 'assign_self',
-                          child: Text('Kendime ata'),
-                        ),
-                      if (!supervisor && !ended)
+                      if (!ended)
                         const PopupMenuItem(
                           value: 'edit',
                           child: Text('Düzenle'),
                         ),
-                      if (!supervisor && !record.isFinalized)
+                      if (!record.isFinalized)
                         const PopupMenuItem(
                           value: 'end',
                           child: Text('Bitti olarak işaretle'),
@@ -601,30 +474,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         value: 'renew',
                         child: Text('Sözleşmeyi uzat'),
                       ),
-                      if (!supervisor &&
-                          (widget.store.currentUser?.role == AppRole.admin ||
-                              widget.store.currentUser?.role ==
-                                  AppRole.manager))
-                        const PopupMenuItem(
-                          value: 'assign',
-                          child: Text('Sorumlu ata'),
-                        ),
-                      if (!supervisor)
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Sil'),
-                        ),
-                    ];
-                  }
-                  if (supervisor && record is AdSpaceModel) {
-                    return const [];
-                  }
-                  if (supervisor && record is CustomerModel) {
-                    return const [
-                      PopupMenuItem(
-                        value: 'details',
-                        child: Text('Detayları görüntüle'),
-                      ),
+                      const PopupMenuItem(value: 'delete', child: Text('Sil')),
                     ];
                   }
                   return [
@@ -669,9 +519,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                       ),
                     ),
                   ),
-                  if (!widget.showEndedContracts &&
-                      !(widget.store.currentUser?.role == AppRole.supervisor &&
-                          widget.type != RecordType.contracts))
+                  if (!widget.showEndedContracts)
                     FilledButton.icon(
                       onPressed: () => _edit(null),
                       icon: const Icon(Icons.add),
@@ -789,29 +637,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
                   ),
                 ),
               ],
-              if (contracts &&
-                  !widget.showEndedContracts &&
-                  widget.store.currentUser?.role == AppRole.supervisor) ...[
-                if (_loadingAvailableContracts) const LinearProgressIndicator(),
-                if (_availableContractsError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Boşta sözleşmeler yüklenemedi: $_availableContractsError',
-                      style: const TextStyle(color: AppColors.danger),
-                    ),
-                  ),
-                if (_availableContracts.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '${_availableContracts.length} sözleşme kendinize atanabilir.',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
               const SizedBox(height: 20),
               TextField(
                 controller: _searchController,
@@ -875,75 +700,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
       },
     );
   }
-}
-
-class _AssignResponsibleDialog extends StatefulWidget {
-  const _AssignResponsibleDialog({
-    required this.authService,
-    this.currentUserId,
-  });
-
-  final AuthService authService;
-  final String? currentUserId;
-
-  @override
-  State<_AssignResponsibleDialog> createState() =>
-      _AssignResponsibleDialogState();
-}
-
-class _AssignResponsibleDialogState extends State<_AssignResponsibleDialog> {
-  String? _selectedUserId;
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Sözleşme sorumlusu'),
-    content: SizedBox(
-      width: 380,
-      child: StreamBuilder<List<AppUser>>(
-        stream: widget.authService.watchUsers(),
-        builder: (context, snapshot) {
-          final users = (snapshot.data ?? const <AppUser>[])
-              .where((user) => user.isActive)
-              .toList();
-          if (snapshot.hasError) {
-            return Text('Kullanıcılar alınamadı: ${snapshot.error}');
-          }
-          if (users.isEmpty) return const Text('Etkin kullanıcı bulunamadı.');
-          _selectedUserId ??=
-              users
-                  .where((user) => user.uid == widget.currentUserId)
-                  .firstOrNull
-                  ?.uid ??
-              users.first.uid;
-          return DropdownButtonFormField<String>(
-            initialValue: _selectedUserId,
-            decoration: const InputDecoration(labelText: 'Sorumlu kullanıcı'),
-            items: users
-                .map(
-                  (user) => DropdownMenuItem(
-                    value: user.uid,
-                    child: Text('${user.username} (${user.role.name})'),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) => setState(() => _selectedUserId = value),
-          );
-        },
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Vazgeç'),
-      ),
-      FilledButton(
-        onPressed: _selectedUserId == null
-            ? null
-            : () => Navigator.pop(context, _selectedUserId),
-        child: const Text('Ata'),
-      ),
-    ],
-  );
 }
 
 class _ContractDetailsDialog extends StatelessWidget {
@@ -1289,12 +1045,6 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (widget.store.currentUser?.role == AppRole.supervisor &&
-        widget.type == RecordType.contracts &&
-        _parsePrice() <= 0) {
-      setState(() => _error = 'Birim fiyat sıfırdan büyük olmalıdır.');
-      return;
-    }
     final id = widget.isRenewal
         ? DateTime.now().microsecondsSinceEpoch.toString()
         : switch (widget.initial) {

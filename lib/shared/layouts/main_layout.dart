@@ -5,27 +5,18 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/services/app_store.dart';
-import '../../core/services/auth_service.dart';
 import '../../core/utils/window_focus_helper.dart';
 import '../../features/notifications/services/reminder_service.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/notifications/screens/notification_screen.dart';
 import '../../features/records/management_screens.dart';
 import '../../features/settings/screens/settings_screen.dart';
-import '../../models/app_user.dart';
 import '../widgets/app_sidebar.dart';
 
 class MainLayout extends StatefulWidget {
-  const MainLayout({
-    super.key,
-    required this.store,
-    this.user,
-    this.authService,
-  });
+  const MainLayout({super.key, required this.store});
 
   final AppStore store;
-  final AppUser? user;
-  final AuthService? authService;
 
   @override
   State<MainLayout> createState() => MainLayoutState();
@@ -47,7 +38,7 @@ class MainLayoutState extends State<MainLayout> {
     'Ayarlar',
   ];
 
-  bool _canAccess(String module) => widget.user?.canAccess(module) ?? true;
+  bool _canAccess(String module) => true;
 
   List<int> get _visibleIndices => [
     if (_canAccess('dashboard')) 0,
@@ -247,13 +238,11 @@ class MainLayoutState extends State<MainLayout> {
           store: widget.store,
           type: RecordType.adSpaces,
           initialAdSpaceFilter: _adSpaceFilter,
-          authService: widget.authService,
         );
       case 2:
         return ManagementScreen(
           store: widget.store,
           type: RecordType.customers,
-          authService: widget.authService,
         );
       case 3:
         return ManagementScreen(
@@ -261,7 +250,6 @@ class MainLayoutState extends State<MainLayout> {
           store: widget.store,
           type: RecordType.contracts,
           initialContractFilter: _contractFilter,
-          authService: widget.authService,
         );
       case 4:
         return ManagementScreen(
@@ -269,20 +257,14 @@ class MainLayoutState extends State<MainLayout> {
           store: widget.store,
           type: RecordType.contracts,
           showEndedContracts: true,
-          authService: widget.authService,
         );
       case 5:
         return NotificationScreen(
           store: widget.store,
-          user: widget.user,
           onReviewContract: openContract,
         );
       case 6:
-        return SettingsScreen(
-          store: widget.store,
-          user: widget.user,
-          authService: widget.authService,
-        );
+        return SettingsScreen(store: widget.store);
 
       default:
         return Center(

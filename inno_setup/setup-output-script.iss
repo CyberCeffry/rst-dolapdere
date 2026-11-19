@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "RST Dolapdere"
-#define MyAppVersion "v 01.15"
+#define MyAppVersion "v 01.16"
 #define MyAppPublisher "CyberCeffry"
 #define MyAppURL "https://www.example.com/"
 #define MyAppExeName "dere_sozlesme_takip.exe"
@@ -40,7 +40,7 @@ DisableProgramGroupPage=yes
 ;PrivilegesRequired=lowest
 OutputBaseFilename={#MyAppName} - {#MyAppVersion}
 OutputDir={#SourcePath}\output_setup
-SetupIconFile=C:\Users\USER\Desktop\git-desktop\rst-dolapdere\inno_setup\setup.ico
+SetupIconFile=C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\inno_setup\setup.ico
 
 UninstallDisplayIcon=C:\Users\USER\Desktop\git-desktop\rst-dolapdere\inno_setup\setup.ico
 
