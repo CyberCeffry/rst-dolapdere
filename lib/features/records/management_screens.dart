@@ -233,11 +233,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isSupervisor
-                ? 'Sözleşme talebi yönetici onayına gönderildi.'
-                : record == null
-                ? 'Kayıt eklendi.'
-                : 'Kayıt güncellendi.',
+            record == null ? 'Kayıt eklendi.' : 'Kayıt güncellendi.',
           ),
         ),
       );
@@ -474,8 +470,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       final customer = widget.store.customerFor(contract.customerId);
       final space = widget.store.adSpaceFor(contract.adSpaceId);
       final days = DateHelper.daysUntil(contract.endDate);
-      title =
-          space?.name ?? _availableAdSpaceNames[contract.id] ?? 'Reklam alanı';
+      title = space?.name ?? 'Reklam alanı';
       subtitle =
           '${customer?.name ?? _availableCustomerNames[contract.id] ?? 'Kiracı'} • '
           '${DateFormat('dd.MM.yyyy').format(contract.startDate)} - '
@@ -601,30 +596,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         value: 'renew',
                         child: Text('Sözleşmeyi uzat'),
                       ),
-                      if (!supervisor &&
-                          (widget.store.currentUser?.role == AppRole.admin ||
-                              widget.store.currentUser?.role ==
-                                  AppRole.manager))
-                        const PopupMenuItem(
-                          value: 'assign',
-                          child: Text('Sorumlu ata'),
-                        ),
-                      if (!supervisor)
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Sil'),
-                        ),
-                    ];
-                  }
-                  if (supervisor && record is AdSpaceModel) {
-                    return const [];
-                  }
-                  if (supervisor && record is CustomerModel) {
-                    return const [
-                      PopupMenuItem(
-                        value: 'details',
-                        child: Text('Detayları görüntüle'),
-                      ),
+                      const PopupMenuItem(value: 'delete', child: Text('Sil')),
                     ];
                   }
                   return [
