@@ -18,4 +18,21 @@ class AppColors {
   static const Color danger = Color(0xFFFF6B7F);
 
   static const Color border = Color(0xFF293940);
+  // Açık tema
+  static const Color lightBackground = Color(0xFFF4F7F8);
+  static const Color lightSurface = Colors.white;
+  static const Color lightSurfaceRaised = Color(0xFFEDF2F3);
+  static const Color lightTextPrimary = Color(0xFF18252B);
+  static const Color lightTextSecondary = Color(0xFF52636A);
+  static const Color lightBorder = Color(0xFFE1E8EA);
+
+  /// Rozet / durum arka planı için yumuşak ton: AppColors.soft(AppColors.success)
+  static Color soft(Color color, [double alpha = 0.14]) =>
+      color.withValues(alpha: alpha);
+
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [primary, primaryDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }

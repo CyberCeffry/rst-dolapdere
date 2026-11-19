@@ -6,20 +6,30 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/ad_space_model.dart';
-import '../../models/app_user.dart';
 import '../../models/contract_history_entry.dart';
 import '../../models/contract_model.dart';
 import '../../models/customer_model.dart';
-import 'auth_service.dart';
 import '../utils/date_helper.dart';
 
+/// Eşitleme durumu. Arayüz bunu dinler; böylece durum değişince tüm uygulama
+/// (ve bildirim yeniden planlama) tetiklenmez.
+class SyncStatus {
+  const SyncStatus({
+    this.busy = false,
+    this.error,
+    this.lastSync,
+    this.pending = 0,
+  });
+
+  final bool busy;
+  final String? error;
+  final DateTime? lastSync;
+  final int pending;
+}
+
 class AppStore extends ChangeNotifier {
-  AppStore._(
-    this._preferences,
-    this._firestore,
-    this._user, {
-    String? initialSyncError,
-  }) : syncError = initialSyncError {
+  AppStore._(this._preferences, this._firestore, {String? initialSyncError})
+    : syncError = initialSyncError {
     final savedThemeMode = _preferences.getString('themeMode');
     themeMode = ValueNotifier(
       ThemeMode.values.firstWhere(
@@ -39,27 +49,33 @@ class AppStore extends ChangeNotifier {
     workingDays = _readWorkingDays();
 
     reminderTimeMinutes = _preferences.getInt('reminderTimeMinutes') ?? 540;
+
+    syncStatus = ValueNotifier(
+      SyncStatus(
+        error: initialSyncError,
+        lastSync: lastSuccessfulSync,
+        pending: pendingChangeCount,
+      ),
+    );
   }
 
   static const _workspaceId = 'rst_dolapdere';
 
   final SharedPreferences _preferences;
   final FirebaseFirestore? _firestore;
-  final AppUser? _user;
   late final ValueNotifier<ThemeMode> themeMode;
-  AuthService? _authServiceInstance;
 
-  AuthService get _authService =>
-      _authServiceInstance ??= AuthService(firestore: _firestore);
-  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  /// Eşitleme durumu (çalışıyor mu, hata, son eşitleme, bekleyen değişiklik).
+  late final ValueNotifier<SyncStatus> syncStatus;
 
   late List<CustomerModel> _customers;
   late List<AdSpaceModel> _adSpaces;
   late List<ContractModel> _contracts;
 
-  Future<void> _writeQueue = Future<void>.value();
-
-  bool _isSyncing = false;
+  Timer? _syncTimer;
+  Future<void> _syncLock = Future<void>.value();
+  Future<void>? _fullSyncFuture;
+  int _busyCount = 0;
 
   bool phoneRemindersEnabled = true;
   bool windowsRemindersEnabled = false;
@@ -82,13 +98,11 @@ class AppStore extends ChangeNotifier {
 
   static Future<AppStore> initialize({
     FirebaseFirestore? firestore,
-    AppUser? user,
     String? initialSyncError,
   }) async {
     final store = AppStore._(
       await SharedPreferences.getInstance(),
       firestore,
-      user,
       initialSyncError: initialSyncError,
     );
 
@@ -100,8 +114,7 @@ class AppStore extends ChangeNotifier {
   }
 
   bool get cloudSyncEnabled => _firestore != null;
-  bool get isCloudSyncing => _isSyncing;
-  AppUser? get currentUser => _user;
+  bool get isCloudSyncing => _busyCount > 0;
 
   Future<void> setThemeMode(ThemeMode mode) async {
     await _preferences.setString('themeMode', mode.name);
@@ -172,244 +185,432 @@ class AppStore extends ChangeNotifier {
     );
   }
 
-  Future<void> _initializeFirestore() async {
-    _isSyncing = true;
-    notifyListeners();
+  static const String _pendingChangesKey = 'pendingSyncChanges';
+
+  List<Map<String, dynamic>> _readPendingChanges() {
+    final raw = _preferences.getString(_pendingChangesKey);
+    if (raw == null) return [];
 
     try {
-      await Future.wait([
-        _mergeCollection<CustomerModel>(
-          name: 'customers',
-          local: () => _customers,
-          decode: CustomerModel.fromJson,
-          idOf: (item) => item.id,
-          assign: (items) => _customers = items,
-        ),
-        _mergeCollection<AdSpaceModel>(
-          name: 'adSpaces',
-          local: () => _adSpaces,
-          decode: AdSpaceModel.fromJson,
-          idOf: (item) => item.id,
-          assign: (items) => _adSpaces = items,
-        ),
-        _mergeCollection<ContractModel>(
-          name: 'contracts',
-          local: () => _contracts,
-          decode: ContractModel.fromJson,
-          idOf: (item) => item.id,
-          assign: (items) => _contracts = items,
-        ),
-      ]);
-
-      if (_user?.role != AppRole.supervisor) {
-        final settings = await _settingsDocument.get();
-        if (settings.exists) {
-          await _applySettings(settings.data() ?? {});
-        } else {
-          await _writeCloudSettings();
-        }
-      }
-
-      syncError = null;
-    } catch (error) {
-      syncError = error.toString();
-    } finally {
-      _listenCollection<CustomerModel>(
-        'customers',
-        CustomerModel.fromJson,
-        (items) => _customers = items,
-      );
-
-      _listenCollection<AdSpaceModel>(
-        'adSpaces',
-        AdSpaceModel.fromJson,
-        (items) => _adSpaces = items,
-      );
-
-      _listenCollection<ContractModel>(
-        'contracts',
-        ContractModel.fromJson,
-        (items) => _contracts = items,
-      );
-
-      if (_user?.role != AppRole.supervisor) {
-        _subscriptions.add(
-          _settingsDocument.snapshots().listen((snapshot) {
-            if (snapshot.exists) {
-              unawaited(_applySettings(snapshot.data() ?? {}));
-            }
-          }, onError: _setSyncError),
-        );
-      }
-
-      _isSyncing = false;
-      notifyListeners();
+      return (jsonDecode(raw) as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+    } catch (_) {
+      return [];
     }
   }
 
-  Future<void> _mergeCollection<T>({
-    required String name,
-    required List<T> Function() local,
-    required T Function(Map<String, dynamic>) decode,
-    required String Function(T) idOf,
-    required void Function(List<T>) assign,
+  Future<void> _savePendingChanges(List<Map<String, dynamic>> changes) async {
+    await _preferences.setString(_pendingChangesKey, jsonEncode(changes));
+  }
+
+  static const String _lastSyncKey = 'lastSuccessfulSync';
+
+  DateTime? get lastSuccessfulSync {
+    final value = _preferences.getString(_lastSyncKey);
+    return value == null ? null : DateTime.tryParse(value);
+  }
+
+  Future<void> _saveLastSync(DateTime date) async {
+    await _preferences.setString(_lastSyncKey, date.toUtc().toIso8601String());
+  }
+
+  Future<void> _addPendingChange({
+    required String collection,
+    required String id,
+    required bool deleted,
+    Map<String, dynamic>? data,
   }) async {
-    final collection = _collection(name);
-    final snapshot = await _queryCollection(name).get();
+    final changes = _readPendingChanges();
 
-    final merged = <String, T>{
-      if (_user?.role != AppRole.supervisor)
-        for (final item in local()) idOf(item): item,
-    };
-
-    final remoteIds = <String>{};
-
-    for (final document in snapshot.docs) {
-      merged[document.id] = decode({...document.data(), 'id': document.id});
-
-      remoteIds.add(document.id);
-    }
-
-    final values = merged.values.toList();
-
-    assign(values);
-    await _saveList(name, values);
-
-    if (_user?.role == AppRole.supervisor) return;
-    final missing = merged.entries.where(
-      (entry) => !remoteIds.contains(entry.key),
+    changes.removeWhere(
+      (item) => item['collection'] == collection && item['id'] == id,
     );
 
-    for (final entry in missing) {
-      unawaited(
-        _writeDocument(
-          collection.doc(entry.key),
-          (entry.value as dynamic).toJson(),
-        ),
-      );
-    }
-  }
-
-  void _listenCollection<T>(
-    String name,
-    T Function(Map<String, dynamic>) decode,
-    void Function(List<T>) assign,
-  ) {
-    _subscriptions.add(
-      _queryCollection(name).snapshots().listen((snapshot) {
-        if (snapshot.metadata.isFromCache) return;
-
-        try {
-          final values = snapshot.docs
-              .map(
-                (document) => decode({...document.data(), 'id': document.id}),
-              )
-              .toList();
-
-          assign(values);
-
-          unawaited(_saveList(name, values));
-
-          if (name == 'contracts') {
-            unawaited(_refreshAvailability());
-          }
-
-          syncError = null;
-          notifyListeners();
-        } catch (error) {
-          _setSyncError(error);
-        }
-      }, onError: _setSyncError),
-    );
-  }
-
-  Query<Map<String, dynamic>> _queryCollection(String name) {
-    final collection = _collection(name);
-    if (_user?.role != AppRole.supervisor) return collection;
-    if (name == 'contracts') {
-      return collection.where('responsibleUserId', isEqualTo: _user!.uid);
-    }
-    final ids = name == 'customers'
-        ? _user!.assignedCustomerIds
-        : name == 'adSpaces'
-        ? _user!.assignedAdSpaceIds
-        : const <String>[];
-    if (ids.isEmpty) {
-      return collection.where(
-        FieldPath.documentId,
-        isEqualTo: '__no_assigned_records__',
-      );
-    }
-    return collection.where(
-      FieldPath.documentId,
-      whereIn: ids.take(30).toList(),
-    );
-  }
-
-  Future<void> _writeDocument(
-    DocumentReference<Map<String, dynamic>> reference,
-    Map<String, dynamic> data,
-  ) => _queue(() => reference.set(data));
-
-  Future<void> _writeCollection(String name, List<dynamic> values) async {
-    final collection = _collection(name);
-
-    for (var start = 0; start < values.length; start += 450) {
-      final batch = _firestore!.batch();
-
-      for (final value in values.skip(start).take(450)) {
-        batch.set(
-          collection.doc(value.id as String),
-          value.toJson() as Map<String, dynamic>,
-        );
-      }
-
-      await batch.commit();
-    }
-  }
-
-  Future<void> _queue(Future<void> Function() operation) {
-    final next = _writeQueue.then((_) async {
-      if (_firestore == null) return;
-
-      _isSyncing = true;
-      notifyListeners();
-
-      try {
-        await operation();
-        syncError = null;
-      } catch (error) {
-        _setSyncError(error);
-      } finally {
-        _isSyncing = false;
-        notifyListeners();
-      }
+    changes.add({
+      'collection': collection,
+      'id': id,
+      'deleted': deleted,
+      'data': data,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
 
-    _writeQueue = next.catchError((_) {});
+    await _savePendingChanges(changes);
+  }
 
+  // ---------------------------------------------------------------------------
+  // EŞİTLEME
+  //
+  // * Canlı dinleyici (snapshots) YOKTUR.
+  // * Kayıt ekleme / düzenleme / silme: yalnızca o kayıt Firebase'e gönderilir.
+  // * Tam eşitleme (gönder + yeni değişiklikleri çek): açılışta, seçilen
+  //   aralıkta (Ayarlar > Firebase) ve "Şimdi eşitle" butonuna basınca.
+  // * Eşitleme işlemleri sırayla çalışır; birbirinin üstüne binmez.
+  // ---------------------------------------------------------------------------
+
+  static const _collectionNames = ['customers', 'adSpaces', 'contracts'];
+  static const Duration _networkTimeout = Duration(seconds: 20);
+  static const _serverOnly = GetOptions(source: Source.server);
+
+  /// 0 = otomatik eşitleme kapalı (yalnızca elle).
+  static const availableSyncIntervals = [0, 15, 30, 60, 120];
+  static const String _syncIntervalKey = 'syncIntervalMinutes';
+
+  int get syncIntervalMinutes {
+    final saved = _preferences.getInt(_syncIntervalKey) ?? 30;
+    return availableSyncIntervals.contains(saved) ? saved : 30;
+  }
+
+  Future<void> setSyncIntervalMinutes(int minutes) async {
+    if (!availableSyncIntervals.contains(minutes)) return;
+    await _preferences.setInt(_syncIntervalKey, minutes);
+    _restartSyncTimer();
+  }
+
+  static const String _settingsDirtyKey = 'settingsDirty';
+  int _settingsRevision = 0;
+
+  bool get _settingsDirty => _preferences.getBool(_settingsDirtyKey) ?? false;
+
+  int get pendingChangeCount =>
+      _readPendingChanges().length + (_settingsDirty ? 1 : 0);
+
+  static const String _instantSyncKey = 'syncInstantly';
+
+  /// Açıksa kayıt ekleme/düzenleme/silme anında Firebase'e gönderilir.
+  /// Kapalıysa (varsayılan) değişiklikler cihazda bekler; seçilen aralıkta veya
+  /// "Şimdi eşitle" ile toplu gönderilir.
+  bool get instantSyncEnabled =>
+      _preferences.getBool(_instantSyncKey) ?? false;
+
+  Future<void> setInstantSyncEnabled(bool value) async {
+    await _preferences.setBool(_instantSyncKey, value);
+    if (value && pendingChangeCount > 0) unawaited(syncNow());
+  }
+
+  void _restartSyncTimer() {
+    _syncTimer?.cancel();
+    _syncTimer = null;
+    final minutes = syncIntervalMinutes;
+    if (_firestore == null || minutes <= 0) return;
+    _syncTimer = Timer.periodic(
+      Duration(minutes: minutes),
+      (_) => unawaited(syncNow()),
+    );
+  }
+
+  Future<void> _initializeFirestore() async {
+    _restartSyncTimer();
+    // Açılışta her seferinde eşitleme yapılmaz: son eşitlemenin üzerinden seçilen
+    // süre geçmediyse beklenir (kontrolü zamanlayıcı yapar). İlk kurulumda
+    // (hiç eşitleme yoksa) bir kez eşitlenir.
+    final last = lastSuccessfulSync;
+    final minutes = syncIntervalMinutes;
+    final due =
+        last == null ||
+        (minutes > 0 &&
+            DateTime.now().difference(last) >= Duration(minutes: minutes));
+    if (due) await syncNow();
+  }
+
+  /// Tam eşitleme. Zaten çalışıyorsa aynı işlemi bekler, ikinci kez başlatmaz.
+  Future<void> syncNow() {
+    if (_firestore == null) return Future<void>.value();
+    return _fullSyncFuture ??= _exclusive(() => _track(_runFullSync))
+        .whenComplete(() {
+          _fullSyncFuture = null;
+        });
+  }
+
+  Future<void> _exclusive(Future<void> Function() operation) {
+    final next = _syncLock.then((_) => operation());
+    _syncLock = next.catchError((_) {});
     return next;
   }
 
-  Future<void> _persistCollection(String name, List<dynamic> values) async {
-    await _saveList(
-      name,
-      name == 'customers'
-          ? _customers
-          : name == 'adSpaces'
-          ? _adSpaces
-          : _contracts,
-    );
+  Future<void> _track(Future<void> Function() body) async {
+    _busyCount++;
+    _publishSyncStatus();
+    try {
+      await body();
+      syncError = null;
+    } on TimeoutException {
+      syncError =
+          'Sunucuya ulaşılamadı (zaman aşımı). İnternet bağlantısını kontrol edin.';
+    } catch (error) {
+      syncError = error.toString();
+    } finally {
+      _busyCount--;
+      _publishSyncStatus();
+    }
+  }
 
-    if (_firestore != null) {
-      unawaited(_queue(() => _writeCollection(name, values)));
+  void _publishSyncStatus() {
+    syncStatus.value = SyncStatus(
+      busy: _busyCount > 0,
+      error: syncError,
+      lastSync: lastSuccessfulSync,
+      pending: pendingChangeCount,
+    );
+  }
+
+  Future<T> _net<T>(Future<T> future) => future.timeout(_networkTimeout);
+
+  Future<void> _runFullSync() async {
+    final startedAt = DateTime.now();
+    var dataChanged = false;
+
+    for (final name in _collectionNames) {
+      if (await _syncCollection(name)) dataChanged = true;
+    }
+    if (dataChanged) await _refreshAvailability();
+
+    final settingsChanged = await _syncSettings();
+
+    await _saveLastSync(startedAt);
+    if (dataChanged || settingsChanged) notifyListeners();
+  }
+
+  Future<bool> _syncSettings() async {
+    if (_settingsDirty) {
+      // Cihazdaki ayar değişmişse önce o gönderilir (sunucudakiyle ezilmez).
+      await _pushSettingsNow();
+      return false;
+    }
+    final settings = await _net(_settingsDocument.get(_serverOnly));
+    if (settings.exists) {
+      return _applySettings(settings.data() ?? {});
+    }
+    await _net(
+      _settingsDocument.set({
+        ..._settingsJson,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
+    return false;
+  }
+
+  /// Yerelde değişen tek bir kaydı Firebase'e gönderir (başka veri çekmez).
+  void _pushRecord(String name, String id) {
+    if (_firestore == null) return;
+    if (!instantSyncEnabled) {
+      // Değişiklik bekleyenler listesinde kalır; sonraki eşitlemede gider.
+      _publishSyncStatus();
+      return;
+    }
+    unawaited(
+      _exclusive(
+        () => _track(() async {
+          final changed = await _syncCollection(
+            name,
+            onlyIds: {id},
+            pull: false,
+          );
+          if (changed) {
+            await _refreshAvailability();
+            notifyListeners();
+          }
+        }),
+      ),
+    );
+  }
+
+  DateTime _readTime(dynamic value) =>
+      DateTime.tryParse(value?.toString() ?? '') ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+  List<dynamic> _listFor(String name) => switch (name) {
+    'customers' => _customers,
+    'adSpaces' => _adSpaces,
+    _ => _contracts,
+  };
+
+  void _assignList(String name, List<dynamic> items) {
+    switch (name) {
+      case 'customers':
+        _customers = items.cast<CustomerModel>().toList();
+      case 'adSpaces':
+        _adSpaces = items.cast<AdSpaceModel>().toList();
+      default:
+        _contracts = items.cast<ContractModel>().toList();
+    }
+  }
+
+  dynamic _decode(String name, Map<String, dynamic> json) => switch (name) {
+    'customers' => CustomerModel.fromJson(json),
+    'adSpaces' => AdSpaceModel.fromJson(json),
+    _ => ContractModel.fromJson(json),
+  };
+
+  /// Bir koleksiyonu eşitler.
+  /// [onlyIds] verilirse yalnızca bu kayıtların bekleyen değişiklikleri gönderilir.
+  /// [pull] false ise sunucudan yeni kayıt çekilmez.
+  /// Yerel liste değiştiyse true döner.
+  Future<bool> _syncCollection(
+    String name, {
+    Set<String>? onlyIds,
+    bool pull = true,
+  }) async {
+    final collection = _collection(name);
+    final tombstones = _collection('_sync_deletions');
+    final lastSync = lastSuccessfulSync;
+
+    final changes = _readPendingChanges()
+        .where(
+          (item) =>
+              item['collection'] == name &&
+              (onlyIds == null || onlyIds.contains(item['id'])),
+        )
+        .toList();
+
+    final values = <String, dynamic>{
+      for (final item in _listFor(name)) (item as dynamic).id as String: item,
+    };
+    final pushed = <String>{};
+    var changed = false;
+
+    // 1) Bekleyen yerel değişiklikleri gönder.
+    for (final change in changes) {
+      final id = change['id'] as String;
+      final localTime = _readTime(change['updatedAt']);
+      final remoteRef = collection.doc(id);
+      final deletedRef = tombstones.doc('${name}_$id');
+
+      final snapshots = await Future.wait([
+        _net(remoteRef.get(_serverOnly)),
+        _net(deletedRef.get(_serverOnly)),
+      ]);
+      final remote = snapshots[0];
+      final remoteDeleted = snapshots[1];
+      final remoteTime = _readTime(remote.data()?['_syncUpdatedAt']);
+      final deletedTime = _readTime(remoteDeleted.data()?['_syncUpdatedAt']);
+
+      if (remoteTime.isAfter(localTime) || deletedTime.isAfter(localTime)) {
+        // Sunucudaki sürüm daha yeni: yerel değişiklik bırakılır.
+        if (deletedTime.isAfter(remoteTime)) {
+          values.remove(id);
+        } else if (remote.exists) {
+          values[id] = _decode(name, {...remote.data()!, 'id': id});
+        }
+        changed = true;
+      } else {
+        final write = _firestore!.batch();
+        if (change['deleted'] == true) {
+          write.set(deletedRef, {
+            'collection': name,
+            'recordId': id,
+            '_syncUpdatedAt': localTime.toIso8601String(),
+          });
+          write.delete(remoteRef);
+          values.remove(id);
+        } else {
+          final data = Map<String, dynamic>.from(change['data'] as Map);
+          write.set(remoteRef, {
+            ...data,
+            '_syncUpdatedAt': localTime.toIso8601String(),
+          });
+          write.delete(deletedRef);
+        }
+        await _net(write.commit());
+        pushed.add(id);
+      }
+      await _clearPending(change);
+    }
+
+    // 2) Son eşitlemeden beri sunucuda değişenleri çek (yalnızca tam eşitleme).
+    if (pull) {
+      final since = lastSync?.toUtc().toIso8601String();
+      // Not: Tek alanlı sorgular indeks gerektirmez. Silinenlerde 'collection'
+      // ve '_syncUpdatedAt' birlikte sorgulanırsa bileşik indeks gerekir; bu
+      // yüzden tarihe göre çekip koleksiyona göre uygulamada süzüyoruz.
+      Query<Map<String, dynamic>> docsQuery = collection;
+      Query<Map<String, dynamic>> deletesQuery = tombstones.where(
+        'collection',
+        isEqualTo: name,
+      );
+      if (since != null) {
+        docsQuery = collection.where('_syncUpdatedAt', isGreaterThan: since);
+        deletesQuery = tombstones.where(
+          '_syncUpdatedAt',
+          isGreaterThan: since,
+        );
+      }
+
+      final results = await Future.wait([
+        _net(docsQuery.get(_serverOnly)),
+        _net(deletesQuery.get(_serverOnly)),
+      ]);
+      final docs = results[0];
+      final deletes = results[1];
+
+      final deletedAt = <String, DateTime>{
+        for (final doc in deletes.docs)
+          if (doc.data()['collection'] == name &&
+              doc.data()['recordId'] is String)
+            doc.data()['recordId'] as String: _readTime(
+              doc.data()['_syncUpdatedAt'],
+            ),
+      };
+
+      final seen = <String>{};
+      for (final doc in docs.docs) {
+        final id = doc.id;
+        seen.add(id);
+        if (pushed.contains(id)) continue;
+        final docTime = _readTime(doc.data()['_syncUpdatedAt']);
+        final deletedTime = deletedAt[id];
+        if (deletedTime != null && !deletedTime.isBefore(docTime)) {
+          if (values.remove(id) != null) changed = true;
+        } else {
+          values[id] = _decode(name, {...doc.data(), 'id': id});
+          changed = true;
+        }
+      }
+      for (final entry in deletedAt.entries) {
+        if (seen.contains(entry.key) || pushed.contains(entry.key)) continue;
+        if (values.remove(entry.key) != null) changed = true;
+      }
+    }
+
+    if (changed) {
+      final list = values.values.toList();
+      _assignList(name, list);
+      await _saveList(name, list);
+    }
+    return changed;
+  }
+
+  /// Gönderilen bekleyen değişikliği listeden çıkarır. Aynı kayıt arada tekrar
+  /// düzenlendiyse (updatedAt farklı) yeni değişiklik korunur.
+  Future<void> _clearPending(Map<String, dynamic> done) async {
+    final current = _readPendingChanges();
+    current.removeWhere(
+      (item) =>
+          item['collection'] == done['collection'] &&
+          item['id'] == done['id'] &&
+          item['updatedAt'] == done['updatedAt'],
+    );
+    await _savePendingChanges(current);
+  }
+
+  Future<void> _persistCollection(String name, List<dynamic> values) async {
+    await _saveList(name, _listFor(name));
+
+    for (final value in values) {
+      final id = value.id as String;
+      await _addPendingChange(
+        collection: name,
+        id: id,
+        deleted: false,
+        data: value.toJson() as Map<String, dynamic>,
+      );
+      _pushRecord(name, id);
     }
   }
 
   Future<void> _deleteRemote(String name, String id) async {
-    if (_firestore == null) return;
-
-    await _queue(() => _collection(name).doc(id).delete());
+    await _addPendingChange(collection: name, id: id, deleted: true);
+    _pushRecord(name, id);
   }
 
   Map<String, dynamic> get _settingsJson => {
@@ -420,7 +621,8 @@ class AppStore extends ChangeNotifier {
     'workingDays': workingDays,
   };
 
-  Future<void> _applySettings(Map<String, dynamic> values) async {
+  Future<bool> _applySettings(Map<String, dynamic> values) async {
+    final before = jsonEncode(_settingsJson);
     phoneRemindersEnabled =
         values['phoneRemindersEnabled'] as bool? ?? phoneRemindersEnabled;
 
@@ -455,6 +657,8 @@ class AppStore extends ChangeNotifier {
       if (parsedDays.isNotEmpty) workingDays = parsedDays;
     }
 
+    if (jsonEncode(_settingsJson) == before) return false;
+
     await _preferences.setBool('phoneRemindersEnabled', phoneRemindersEnabled);
     await _preferences.setBool(
       'windowsRemindersEnabled',
@@ -470,30 +674,37 @@ class AppStore extends ChangeNotifier {
       'workingDays',
       workingDays.map((weekday) => weekday.toString()).toList(),
     );
-    notifyListeners();
+    return true;
   }
 
-  Future<void> _writeCloudSettings() async {
+  /// Ayar değiştiğinde yalnızca işaretlenir. Anlık gönderme kapalıysa
+  /// (varsayılan) Firebase'e bir sonraki eşitlemede gider.
+  Future<void> _markSettingsDirty() async {
+    _settingsRevision++;
+    await _preferences.setBool(_settingsDirtyKey, true);
     if (_firestore == null) return;
+    if (instantSyncEnabled) {
+      await _exclusive(() => _track(_pushSettingsNow));
+    } else {
+      _publishSyncStatus();
+    }
+  }
 
-    await _queue(
-      () => _settingsDocument.set({
+  Future<void> _pushSettingsNow() async {
+    final revision = _settingsRevision;
+    await _net(
+      _settingsDocument.set({
         ..._settingsJson,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true)),
     );
-  }
-
-  void _setSyncError(Object error) {
-    syncError = error.toString();
-    _isSyncing = false;
-    notifyListeners();
+    // Gönderirken ayar tekrar değiştiyse işaret kalkmaz.
+    if (revision == _settingsRevision) {
+      await _preferences.setBool(_settingsDirtyKey, false);
+    }
   }
 
   Future<void> saveCustomer(CustomerModel customer) async {
-    if (_user?.role == AppRole.supervisor) {
-      throw StateError('Sorumlu kiracı ekleyemez veya düzenleyemez.');
-    }
     _customers = _upsert(_customers, customer, (item) => item.id);
 
     await _persistCollection('customers', [customer]);
@@ -501,9 +712,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> deleteCustomer(String id) async {
-    if (_user?.role == AppRole.supervisor) {
-      throw StateError('Sorumlu kiracı silemez.');
-    }
     if (_contracts.any((contract) => contract.customerId == id)) {
       throw StateError(
         'Bu müşteriye bağlı sözleşmeler var. Önce sözleşmeleri silin.',
@@ -520,9 +728,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> saveAdSpace(AdSpaceModel adSpace) async {
-    if (_user?.role == AppRole.supervisor) {
-      throw StateError('Sorumlu reklam alanı ekleyemez veya düzenleyemez.');
-    }
     _adSpaces = _upsert(_adSpaces, adSpace, (item) => item.id);
 
     await _persistCollection('adSpaces', [adSpace]);
@@ -530,9 +735,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> deleteAdSpace(String id) async {
-    if (_user?.role == AppRole.supervisor) {
-      throw StateError('Sorumlu reklam alanı silemez.');
-    }
     if (_contracts.any(
       (contract) =>
           contract.adSpaceId == id &&
@@ -554,9 +756,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> deleteContract(String id) async {
-    if (_user?.role == AppRole.supervisor) {
-      throw StateError('Sorumlu sözleşme silemez.');
-    }
     _contracts.removeWhere((contract) => contract.id == id);
 
     await _saveList('contracts', _contracts);
@@ -568,13 +767,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> saveContract(ContractModel contract) async {
-    if (_user?.role == AppRole.supervisor) {
-      await _authService.submitContractChange(
-        operation: 'create',
-        contract: contract,
-      );
-      return;
-    }
     final existing = _contracts.where((item) => item.id == contract.id);
     final existingContract = existing.firstOrNull;
 
@@ -634,8 +826,6 @@ class AppStore extends ChangeNotifier {
               occurredAt: DateTime.now(),
               newEndDate: contract.endDate,
               newMonthlyPrice: contract.monthlyPrice,
-              actorUid: _user?.uid,
-              actorUsername: _user?.username,
             ),
           ],
     );
@@ -657,12 +847,6 @@ class AppStore extends ChangeNotifier {
 
     final current = _contracts[index];
 
-    if (_user?.role == AppRole.supervisor) {
-      await _authService.setContractActive(contractId: id, isActive: false);
-      await setContractActive(id, false, alreadyUpdatedRemotely: true);
-      return;
-    }
-
     if (current.isFinalized) return;
 
     final finalized = _copyContract(
@@ -679,8 +863,6 @@ class AppStore extends ChangeNotifier {
           newEndDate: current.endDate,
           previousMonthlyPrice: current.monthlyPrice,
           newMonthlyPrice: current.monthlyPrice,
-          actorUid: _user?.uid,
-          actorUsername: _user?.username,
         ),
       ],
     );
@@ -703,14 +885,6 @@ class AppStore extends ChangeNotifier {
 
     final source = _contracts[index];
 
-    if (_user?.role == AppRole.supervisor) {
-      await _authService.submitContractChange(
-        operation: 'renew',
-        contractId: sourceId,
-        contract: renewed,
-      );
-      return;
-    }
 
     if (source.customerId != renewed.customerId ||
         source.adSpaceId != renewed.adSpaceId) {
@@ -744,8 +918,6 @@ class AppStore extends ChangeNotifier {
           newEndDate: renewed.endDate,
           previousMonthlyPrice: source.monthlyPrice,
           newMonthlyPrice: renewed.monthlyPrice,
-          actorUid: _user?.uid,
-          actorUsername: _user?.username,
         ),
       ],
     );
@@ -817,7 +989,7 @@ class AppStore extends ChangeNotifier {
       this.workingDays.map((weekday) => weekday.toString()).toList(),
     );
 
-    unawaited(_writeCloudSettings());
+    unawaited(_markSettingsDirty());
 
     notifyListeners();
   }
@@ -845,16 +1017,9 @@ class AppStore extends ChangeNotifier {
         .length;
   }
 
-  Future<void> setContractActive(
-    String id,
-    bool isActive, {
-    bool alreadyUpdatedRemotely = false,
-  }) async {
+  Future<void> setContractActive(String id, bool isActive) async {
     final index = _contracts.indexWhere((item) => item.id == id);
     if (index < 0) throw StateError('Sözleşme bulunamadı.');
-    if (_user?.role == AppRole.supervisor && !alreadyUpdatedRemotely) {
-      await _authService.setContractActive(contractId: id, isActive: isActive);
-    }
     final source = _contracts[index];
     final now = DateTime.now();
     final updated = _copyContract(
@@ -873,17 +1038,11 @@ class AppStore extends ChangeNotifier {
           newEndDate: source.endDate,
           previousMonthlyPrice: source.monthlyPrice,
           newMonthlyPrice: source.monthlyPrice,
-          actorUid: _user?.uid,
-          actorUsername: _user?.username,
         ),
       ],
     );
     _contracts[index] = updated;
-    if (_user?.role == AppRole.supervisor) {
-      await _saveList('contracts', _contracts);
-    } else {
-      await _persistCollection('contracts', [updated]);
-    }
+    await _persistCollection('contracts', [updated]);
     await _refreshAvailability();
     notifyListeners();
   }
@@ -965,7 +1124,6 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> _refreshAvailability() async {
-    if (_user?.role == AppRole.supervisor) return;
     final now = DateTime.now();
 
     _adSpaces = _adSpaces.map((space) {
@@ -989,18 +1147,13 @@ class AppStore extends ChangeNotifier {
     }).toList();
 
     await _saveList('adSpaces', _adSpaces);
-
-    if (_firestore != null) {
-      unawaited(_queue(() => _writeCollection('adSpaces', _adSpaces)));
-    }
   }
 
   @override
   void dispose() {
-    for (final subscription in _subscriptions) {
-      unawaited(subscription.cancel());
-    }
+    _syncTimer?.cancel();
     themeMode.dispose();
+    syncStatus.dispose();
 
     super.dispose();
   }

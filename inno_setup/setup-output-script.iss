@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "RST Dolapdere"
-#define MyAppVersion "v 01.15"
+#define MyAppVersion "v 01.21"
 #define MyAppPublisher "CyberCeffry"
 #define MyAppURL "https://www.example.com/"
 #define MyAppExeName "dere_sozlesme_takip.exe"
@@ -40,9 +40,9 @@ DisableProgramGroupPage=yes
 ;PrivilegesRequired=lowest
 OutputBaseFilename={#MyAppName} - {#MyAppVersion}
 OutputDir={#SourcePath}\output_setup
-SetupIconFile=C:\Users\USER\Desktop\git-desktop\rst-dolapdere\inno_setup\setup.ico
+SetupIconFile=C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\inno_setup\setup.ico
 
-UninstallDisplayIcon=C:\Users\USER\Desktop\git-desktop\rst-dolapdere\inno_setup\setup.ico
+UninstallDisplayIcon=C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\inno_setup\setup.ico
 
 SolidCompression=yes
 WizardStyle=modern dynamic
@@ -51,9 +51,9 @@ WizardStyle=modern dynamic
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Users\USER\Desktop\git-desktop\rst-dolapdere\build\windows\x64\runner\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Users\USER\Desktop\git-desktop\rst-dolapdere\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "C:\Users\USER\Desktop\git-desktop\rst-dolapdere\inno_setup\setup.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\build\windows\x64\runner\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\canan\Desktop\burak-cirit sahsi-sirkett\cirit-pazarlama\rst-dolapdere\inno_setup\setup.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files.
 
 [Registry]
