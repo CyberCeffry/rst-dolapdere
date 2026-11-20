@@ -311,6 +311,30 @@ class _ManagementScreenState extends State<ManagementScreen> {
     }
   }
 
+  /// Aktif sözleşme için kalan süre: 30 gün ve altı gün, üstü ay olarak yazılır.
+  /// (10 gün ve altındaki gösterim ayrı dalda, olduğu gibi kalır.)
+  String _activeStatus(DateTime endDate, int days) {
+    if (days <= 30) return 'Aktif • $days gün kaldı';
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    final end = DateTime.utc(endDate.year, endDate.month, endDate.day);
+    var months = (end.year - today.year) * 12 + end.month - today.month;
+    if (end.day < today.day) months--;
+    if (months < 1) return 'Aktif • $days gün kaldı';
+    // Bugünden "months" ay sonrası (ay sonuna taşarsa ayın son günü).
+    final anchorMonth = today.month + months;
+    final lastDay = DateTime.utc(today.year, anchorMonth + 1, 0).day;
+    final anchor = DateTime.utc(
+      today.year,
+      anchorMonth,
+      today.day > lastDay ? lastDay : today.day,
+    );
+    final extraDays = end.difference(anchor).inDays;
+    return extraDays > 0
+        ? 'Aktif • $months ay $extraDays gün kaldı'
+        : 'Aktif • $months ay kaldı';
+  }
+
   String _recordTitle(dynamic record) {
     if (record is AdSpaceModel) return record.name;
     if (record is CustomerModel) return record.name;
@@ -387,17 +411,19 @@ class _ManagementScreenState extends State<ManagementScreen> {
           '${customer?.name ?? 'Kiracı'} • '
           '${DateFormat('dd.MM.yyyy').format(contract.startDate)} - '
           '${DateFormat('dd.MM.yyyy').format(contract.endDate)} • '
-          '${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)} / ay'
+          '${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}'
           '${contract.responsibleUsername == null ? '' : ' • Sorumlu: ${contract.responsibleUsername}'}';
       icon = Icons.description_outlined;
       status = contract.isFinalized
           ? 'Bitti olarak işaretlendi'
           : days < 0
           ? 'Süresi doldu'
+          : !contract.isActive
+          ? 'Pasif'
           : days <= 10
           ? '$days gün kaldı'
-          : 'Aktif';
-      statusColor = contract.isFinalized || days < 0
+          : _activeStatus(contract.endDate, days);
+      statusColor = contract.isFinalized || !contract.isActive || days < 0
           ? Theme.of(context).colorScheme.onSurfaceVariant
           : days <= 10
           ? AppColors.danger
@@ -421,7 +447,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
               Text(subtitle.isEmpty ? 'Ek bilgi bulunmuyor' : subtitle),
         ),
         trailing: SizedBox(
-          width: 130,
+          width: 250,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -761,7 +787,7 @@ class _ContractDetailsDialog extends StatelessWidget {
               Text('Başlangıç: ${dateFormat.format(contract.startDate)}'),
               Text('Bitiş: ${dateFormat.format(contract.endDate)}'),
               Text(
-                'Aylık bedel: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}',
+                'Toplam tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}',
               ),
               if (contract.notes.isNotEmpty) Text('Notlar: ${contract.notes}'),
               const SizedBox(height: 20),
@@ -1409,7 +1435,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   ),
                   _dateField('Bitiş tarihi', _endDate, false),
                   _textField(
-                    'Aylık kira (₺)',
+                    'Toplam tutar (₺)',
                     _price,
                     required: true,
                     keyboardType: const TextInputType.numberWithOptions(

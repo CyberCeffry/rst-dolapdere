@@ -350,7 +350,7 @@ class MainLayoutState extends State<MainLayout> {
               ),
               Text('Bitiş: ${DateFormat('dd.MM.yyyy').format(record.endDate)}'),
               Text(
-                'Aylık bedel: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(record.monthlyPrice)}',
+                'Toplam tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(record.monthlyPrice)}',
               ),
               if (record.isFinalized)
                 const Text('Durum: Bitti olarak işaretlendi'),
