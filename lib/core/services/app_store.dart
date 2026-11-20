@@ -10,6 +10,7 @@ import '../../models/contract_history_entry.dart';
 import '../../models/contract_model.dart';
 import '../../models/customer_model.dart';
 import '../utils/date_helper.dart';
+import 'background_sync.dart';
 
 /// Eşitleme durumu. Arayüz bunu dinler; böylece durum değişince tüm uygulama
 /// (ve bildirim yeniden planlama) tetiklenmez.
@@ -27,7 +28,7 @@ class SyncStatus {
   final int pending;
 }
 
-class AppStore extends ChangeNotifier {
+class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   AppStore._(this._preferences, this._firestore, {String? initialSyncError})
     : syncError = initialSyncError {
     final savedThemeMode = _preferences.getString('themeMode');
@@ -109,6 +110,7 @@ class AppStore extends ChangeNotifier {
     if (firestore != null) {
       unawaited(store._initializeFirestore());
     }
+    store._attachLifecycle();
 
     return store;
   }
@@ -265,6 +267,9 @@ class AppStore extends ChangeNotifier {
     if (!availableSyncIntervals.contains(minutes)) return;
     await _preferences.setInt(_syncIntervalKey, minutes);
     _restartSyncTimer();
+    if (_firestore != null) {
+      unawaited(BackgroundSync.schedule(minutes, force: true));
+    }
   }
 
   static const String _settingsDirtyKey = 'settingsDirty';
@@ -286,6 +291,101 @@ class AppStore extends ChangeNotifier {
   Future<void> setInstantSyncEnabled(bool value) async {
     await _preferences.setBool(_instantSyncKey, value);
     if (value && pendingChangeCount > 0) unawaited(syncNow());
+  }
+
+  // ---------------------------------------------------------------------------
+  // ARKA PLAN / ÖN PLAN
+  //
+  // * Android: WorkManager görevi (background_sync.dart) uygulama kapalıyken de
+  //   seçilen aralıkta eşitler.
+  // * Uygulama öne gelince: arka planda değişen veriler yeniden okunur ve süre
+  //   dolduysa hemen eşitlenir (zamanlayıcı arka planda durmuş olabilir).
+  // ---------------------------------------------------------------------------
+
+  static const String _foregroundKey = 'appForegroundAt';
+
+  void _attachLifecycle() {
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_markForeground(true));
+  }
+
+  Future<void> _markForeground(bool value) async {
+    if (value) {
+      await _preferences.setString(
+        _foregroundKey,
+        DateTime.now().toUtc().toIso8601String(),
+      );
+    } else {
+      await _preferences.remove(_foregroundKey);
+    }
+  }
+
+  bool get _syncDue {
+    final minutes = syncIntervalMinutes;
+    if (minutes <= 0) return false;
+    final last = lastSuccessfulSync;
+    return last == null ||
+        DateTime.now().difference(last) >= Duration(minutes: minutes);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_handleResumed());
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        unawaited(_markForeground(false));
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        break;
+    }
+  }
+
+  bool _differs(String key, List<dynamic> current) =>
+      jsonEncode(current.map((item) => item.toJson()).toList()) !=
+      (_preferences.getString(key) ?? '[]');
+
+  Future<void> _handleResumed() async {
+    await _markForeground(true);
+    if (_busyCount == 0) {
+      await _preferences.reload();
+      final changed =
+          _differs('customers', _customers) ||
+          _differs('adSpaces', _adSpaces) ||
+          _differs('contracts', _contracts);
+      if (changed) {
+        _customers = _readList('customers', CustomerModel.fromJson);
+        _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
+        _contracts = _readList('contracts', ContractModel.fromJson);
+        _publishSyncStatus();
+        notifyListeners();
+      }
+    }
+    _restartSyncTimer();
+    if (_firestore != null && _syncDue) unawaited(syncNow());
+  }
+
+  /// Android arka plan görevi için başsız (arayüzsüz) eşitleme.
+  static Future<bool> runBackgroundSync(FirebaseFirestore firestore) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.reload();
+    final foregroundAt = DateTime.tryParse(
+      preferences.getString(_foregroundKey) ?? '',
+    );
+    if (foregroundAt != null &&
+        DateTime.now().toUtc().difference(foregroundAt.toUtc()) <
+            const Duration(hours: 6)) {
+      // Uygulama ön planda: kendi zamanlayıcısı eşitliyor, çakışma olmasın.
+      return true;
+    }
+    final store = AppStore._(preferences, firestore);
+    try {
+      await store.syncNow();
+      return store.syncError == null;
+    } finally {
+      store.dispose();
+    }
   }
 
   void _restartSyncTimer() {
@@ -1155,6 +1255,7 @@ class AppStore extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncTimer?.cancel();
     themeMode.dispose();
     syncStatus.dispose();

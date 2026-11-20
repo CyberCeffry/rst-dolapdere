@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/services/app_store.dart';
+import 'core/services/background_sync.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'shared/layouts/main_layout.dart';
@@ -42,6 +43,9 @@ Future<void> main() async {
     firestore: firestore,
     initialSyncError: cloudError,
   );
+  if (firestore != null) {
+    unawaited(BackgroundSync.schedule(store.syncIntervalMinutes));
+  }
   runApp(RSTDolapdereApp(store: store));
   WidgetsBinding.instance.addPostFrameCallback((_) {
     mainLayoutKey.currentState?.initializeReminders();

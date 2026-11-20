@@ -442,7 +442,7 @@ class _SyncCardState extends State<_SyncCard> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Eşitlemede yalnızca değişen kayıtlar gönderilir ve son eşitlemeden beri değişenler alınır.',
+                  'Eşitlemede yalnızca değişen kayıtlar gönderilir ve son eşitlemeden beri değişenler alınır. Android cihazlarda uygulama arka plandayken veya kapalıyken de seçilen aralıkta (en az 15 dk) eşitlenir.',
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,

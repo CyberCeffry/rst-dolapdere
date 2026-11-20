@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_helper.dart';
 import '../../../models/contract_model.dart';
 import '../../../models/customer_model.dart';
+import '../../records/management_screens.dart';
 
 class NotificationScreen extends StatelessWidget {
   const NotificationScreen({
@@ -16,6 +17,9 @@ class NotificationScreen extends StatelessWidget {
   });
 
   final AppStore store;
+
+  /// Artık kullanılmıyor: "İncele" bildirimler ekranında detay penceresini açar,
+  /// sözleşmeler sayfasına yönlendirmez. (Geriye dönük uyumluluk için duruyor.)
   final ValueChanged<String>? onReviewContract;
 
   Future<void> _openWhatsApp(
@@ -114,7 +118,7 @@ class NotificationScreen extends StatelessWidget {
                               context,
                             ).colorScheme.onSurfaceVariant,
                           ),
-                          SizedBox(height: 12),
+                          const SizedBox(height: 12),
                           Text(
                             'Yaklaşan sözleşme bulunmuyor.',
                             style: TextStyle(
@@ -139,7 +143,12 @@ class NotificationScreen extends StatelessWidget {
                     showWhatsapp: true,
                     onWhatsapp: () => _openWhatsApp(context, contract),
                     reminderOffsets: store.reminderOffsets,
-                    onReview: () => onReviewContract?.call(contract.id),
+                    // Sözleşmeler ekranındaki "Detayları görüntüle" ile aynı
+                    // pencere; bildirimler ekranından ayrılmadan açılır.
+                    onReview: () => showContractDetails(context, store, contract),
+                    onOpenPdf: contract.hasPdf
+                        ? () => openContractPdfFile(context, contract)
+                        : null,
                   ),
                 ),
             ],
@@ -159,6 +168,7 @@ class _ReminderCard extends StatelessWidget {
     required this.onWhatsapp,
     required this.reminderOffsets,
     required this.onReview,
+    this.onOpenPdf,
   });
 
   final ContractModel contract;
@@ -168,6 +178,7 @@ class _ReminderCard extends StatelessWidget {
   final VoidCallback onWhatsapp;
   final List<int> reminderOffsets;
   final VoidCallback onReview;
+  final VoidCallback? onOpenPdf;
 
   @override
   Widget build(BuildContext context) {
@@ -232,10 +243,21 @@ class _ReminderCard extends StatelessWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: onReview,
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('İncele'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onOpenPdf != null)
+                    IconButton(
+                      tooltip: 'Sözleşme PDF\'ini aç',
+                      onPressed: onOpenPdf,
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                    ),
+                  TextButton.icon(
+                    onPressed: onReview,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('İncele'),
+                  ),
+                ],
               ),
             ),
             const Divider(height: 24),

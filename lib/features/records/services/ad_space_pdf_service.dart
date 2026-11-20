@@ -1,9 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-// import 'package:printing/printing.dart';
-import 'dart:io';
 
 import '../../../core/services/app_store.dart';
 import '../../../core/utils/contract_remaining_time.dart';
@@ -35,14 +35,17 @@ class AdSpacePdfService {
     final fontData = await rootBundle.load(
       'assets/fonts/NotoSans-Variable.ttf',
     );
+
     final font = pw.Font.ttf(fontData);
     final boldFont = pw.Font.ttf(fontData);
     final dateFormat = DateFormat('dd.MM.yyyy');
+
     final document = pw.Document(
       title: 'RST Dolapdere Reklam Alanları',
       author: 'RST Dolapdere',
       subject: 'Reklam alanı ve kiracı durumu',
     );
+
     final sorted = [...adSpaces]..sort((a, b) => a.name.compareTo(b.name));
 
     document.addPage(
@@ -50,6 +53,7 @@ class AdSpacePdfService {
         pageFormat: PdfPageFormat.a4.landscape,
         theme: pw.ThemeData.withFont(base: font, bold: boldFont),
         margin: const pw.EdgeInsets.all(28),
+
         header: (context) => pw.Padding(
           padding: const pw.EdgeInsets.only(bottom: 14),
           child: pw.Row(
@@ -63,22 +67,26 @@ class AdSpacePdfService {
             ],
           ),
         ),
+
         footer: (context) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text('${context.pageNumber} / ${context.pagesCount}'),
         ),
+
         build: (context) => [
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+
             columnWidths: const {
               0: pw.FlexColumnWidth(2),
               1: pw.FlexColumnWidth(2),
               2: pw.FlexColumnWidth(1.3),
               3: pw.FlexColumnWidth(1.2),
               4: pw.FlexColumnWidth(1.2),
-              //5: pw.FlexColumnWidth(1.5),
             },
+
             children: [
+              // Tablo başlığı
               _row(
                 const [
                   'Reklam alanı',
@@ -91,14 +99,21 @@ class AdSpacePdfService {
                 boldFont,
                 header: true,
               ),
+
+              // Reklam alanları
               ...sorted.map((space) {
                 final contract = store.activeContractForAdSpace(space.id);
+
                 final customer = contract == null
                     ? null
                     : store.customerFor(contract.customerId);
+
                 final days = contract == null
                     ? null
                     : ContractRemainingTime.daysUntil(contract.endDate);
+
+                final isEmpty = contract == null;
+
                 return _row(
                   [
                     space.name,
@@ -107,10 +122,15 @@ class AdSpacePdfService {
                         ? '-'
                         : dateFormat.format(contract.endDate),
                     days == null ? '-' : ContractRemainingTime.format(days),
-                    contract == null ? 'Boş' : 'Kirada',
+                    isEmpty ? 'Boş' : 'Kirada',
                     contract?.responsibleUsername ?? '-',
                   ],
                   font,
+
+                  // Sözleşmesi olmayan satırların arka planı sarı.
+                  empty: isEmpty,
+
+                  // Acil sözleşmelerin kalan süre yazısı kırmızı.
                   remainingColor:
                       days != null && ContractRemainingTime.isUrgent(days)
                       ? PdfColors.red
@@ -130,25 +150,31 @@ class AdSpacePdfService {
     List<String> values,
     pw.Font font, {
     bool header = false,
+    bool empty = false,
     PdfColor? remainingColor,
-  }) => pw.TableRow(
-    decoration: header
-        ? const pw.BoxDecoration(color: PdfColors.grey200)
-        : null,
-    children: values.indexed
-        .map(
-          (entry) => pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-            child: pw.Text(
-              entry.$2,
-              style: pw.TextStyle(
-                font: font,
-                fontSize: 8,
-                color: entry.$1 == 3 ? remainingColor : null,
-              ),
+  }) {
+    return pw.TableRow(
+      decoration: header
+          ? const pw.BoxDecoration(color: PdfColors.grey200)
+          : empty
+          ? const pw.BoxDecoration(color: PdfColors.yellow100)
+          : null,
+
+      children: values.indexed.map((entry) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+          child: pw.Text(
+            entry.$2,
+            style: pw.TextStyle(
+              font: font,
+              fontSize: 8,
+
+              // Yalnızca kalan süre sütununun rengi değişir.
+              color: entry.$1 == 3 ? remainingColor : null,
             ),
           ),
-        )
-        .toList(),
-  );
+        );
+      }).toList(),
+    );
+  }
 }

@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/contract_date_helper.dart';
 import '../../core/utils/contract_remaining_time.dart';
 import '../../core/utils/date_helper.dart';
+import '../../core/utils/turkish_text.dart';
 import '../contracts/services/contract_pdf_service.dart';
 import '../contracts/services/contract_file_service.dart';
 import 'services/ad_space_pdf_service.dart';
@@ -17,9 +18,63 @@ import '../../models/customer_model.dart';
 
 enum RecordType { adSpaces, customers, contracts }
 
-enum ContractListFilter { all, active, upcoming, expired }
+enum ContractListFilter { all, active, upcoming, notStarted, passive, expired }
 
-enum AdSpaceListFilter { all, available, occupied }
+enum EndedContractFilter { all, finalized, expired }
+
+enum AdSpaceListFilter { all, available, occupied, expiring }
+
+enum CustomerListFilter { all, withActive, withoutActive, noPhone }
+
+enum CustomerSort { nameAsc, nameDesc, newest, oldest, mostActive }
+
+enum AdSpaceSort { nameAsc, nameDesc, endAsc, priceDesc, priceAsc }
+
+enum ContractSort {
+  endAsc,
+  endDesc,
+  startDesc,
+  startAsc,
+  spaceAsc,
+  spaceDesc,
+  tenantAsc,
+  tenantDesc,
+  priceDesc,
+  priceAsc,
+}
+
+enum ContractDateField { end, start }
+
+/// Sözleşmenin kalan süresi (yazı olarak).
+String contractRemainingLabel(ContractModel contract) {
+  if (contract.isFinalized) return 'Bitti';
+  final days = DateHelper.daysUntil(contract.endDate);
+  if (days < 0) return 'Süresi doldu';
+  if (days == 0) return 'Bugün bitiyor';
+  return ContractRemainingTime.format(days);
+}
+
+/// Sözleşme PDF'ini açar (hata olursa mesaj gösterir).
+Future<void> openContractPdfFile(
+  BuildContext context,
+  ContractModel contract,
+) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final error = await ContractFileService.open(contract.pdfPath);
+  if (error != null) {
+    messenger?.showSnackBar(SnackBar(content: Text(error)));
+  }
+}
+
+/// Sözleşme detay penceresi (Sözleşmeler ve Bildirimler ekranlarında ortak).
+Future<void> showContractDetails(
+  BuildContext context,
+  AppStore store,
+  ContractModel contract,
+) => showDialog<void>(
+  context: context,
+  builder: (context) => ContractDetailsDialog(store: store, contract: contract),
+);
 
 class ManagementScreen extends StatefulWidget {
   const ManagementScreen({
@@ -46,13 +101,22 @@ class _ManagementScreenState extends State<ManagementScreen> {
   String _query = '';
   late ContractListFilter _contractFilter;
   late AdSpaceListFilter _adSpaceFilter;
-  bool _nearestFirst = true;
+  CustomerListFilter _customerFilter = CustomerListFilter.all;
+  CustomerSort _customerSort = CustomerSort.nameAsc;
+  ContractSort _contractSort = ContractSort.endAsc;
+  AdSpaceSort _adSpaceSort = AdSpaceSort.nameAsc;
+  EndedContractFilter _endedFilter = EndedContractFilter.all;
+  DateTimeRange? _dateRange;
+  ContractDateField _dateField = ContractDateField.end;
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
     _contractFilter = widget.initialContractFilter;
     _adSpaceFilter = widget.initialAdSpaceFilter;
+    if (widget.showEndedContracts) _contractSort = ContractSort.endDesc;
   }
 
   String get _title => switch (widget.type) {
@@ -64,69 +128,179 @@ class _ManagementScreenState extends State<ManagementScreen> {
   List<dynamic> get _records {
     final records = switch (widget.type) {
       RecordType.adSpaces => _adSpaceRecords(),
-      RecordType.customers => widget.store.customers,
+      RecordType.customers => _customerRecords(),
       RecordType.contracts => _contractRecords(),
     };
-    final query = _query.trim().toLowerCase();
+    final query = TurkishText.fold(_query.trim());
     if (query.isEmpty) return records;
     return records
-        .where((record) => _searchText(record).contains(query))
+        .where(
+          (record) => TurkishText.fold(_searchText(record)).contains(query),
+        )
         .toList();
   }
 
-  List<AdSpaceModel> _adSpaceRecords() => widget.store.adSpaces.where((space) {
-    final occupied = widget.store.activeContractForAdSpace(space.id) != null;
-    return switch (_adSpaceFilter) {
-      AdSpaceListFilter.all => true,
-      AdSpaceListFilter.available => !occupied,
-      AdSpaceListFilter.occupied => occupied,
-    };
-  }).toList();
-
-  List<ContractModel> _contractRecords() {
-    final storedContracts = widget.showEndedContracts
-        ? widget.store.endedContracts
-        : widget.store.contracts
-              .where((contract) => !contract.isFinalized)
-              .toList();
-    final contracts = storedContracts;
-    if (widget.showEndedContracts) return contracts;
-    final filtered = contracts.where((contract) {
-      final days = DateHelper.daysUntil(contract.endDate);
-      return switch (_contractFilter) {
-        ContractListFilter.all => true,
-        ContractListFilter.active =>
-          widget.store.activeContracts.any(
-                (active) => active.id == contract.id,
-              ) ||
-              (contract.isActive &&
-                  !contract.isFinalized &&
-                  DateHelper.daysUntil(contract.startDate) <= 0 &&
-                  DateHelper.daysUntil(contract.endDate) >= 0),
-        ContractListFilter.upcoming => days >= 0 && days <= 10,
-        ContractListFilter.expired => days < 0,
+  List<AdSpaceModel> _adSpaceRecords() {
+    final store = widget.store;
+    final list = store.adSpaces.where((space) {
+      final contract = store.activeContractForAdSpace(space.id);
+      final days = contract == null
+          ? null
+          : ContractRemainingTime.daysUntil(contract.endDate);
+      return switch (_adSpaceFilter) {
+        AdSpaceListFilter.all => true,
+        AdSpaceListFilter.available => contract == null,
+        AdSpaceListFilter.occupied => contract != null,
+        AdSpaceListFilter.expiring => days != null && days <= 10,
       };
     }).toList();
+    int endDays(AdSpaceModel space) {
+      final contract = store.activeContractForAdSpace(space.id);
+      return contract == null
+          ? 1 << 30
+          : ContractRemainingTime.daysUntil(contract.endDate);
+    }
+
+    list.sort((a, b) {
+      final result = switch (_adSpaceSort) {
+        AdSpaceSort.nameAsc => TurkishText.compare(a.name, b.name),
+        AdSpaceSort.nameDesc => TurkishText.compare(b.name, a.name),
+        AdSpaceSort.endAsc => endDays(a).compareTo(endDays(b)),
+        AdSpaceSort.priceDesc => b.monthlyPrice.compareTo(a.monthlyPrice),
+        AdSpaceSort.priceAsc => a.monthlyPrice.compareTo(b.monthlyPrice),
+      };
+      return result != 0 ? result : TurkishText.compare(a.name, b.name);
+    });
+    return list;
+  }
+
+  List<CustomerModel> _customerRecords() {
+    final counts = <String, int>{};
+    for (final contract in widget.store.activeContracts) {
+      counts[contract.customerId] = (counts[contract.customerId] ?? 0) + 1;
+    }
+    int activeCount(CustomerModel customer) => counts[customer.id] ?? 0;
+    // Yeni kayıtların kimliği oluşturulma anıdır (mikrosaniye); eskiler 0 sayılır.
+    int created(CustomerModel customer) => int.tryParse(customer.id) ?? 0;
+    final list = widget.store.customers.where((customer) {
+      return switch (_customerFilter) {
+        CustomerListFilter.all => true,
+        CustomerListFilter.withActive => activeCount(customer) > 0,
+        CustomerListFilter.withoutActive => activeCount(customer) == 0,
+        CustomerListFilter.noPhone => customer.phone.trim().isEmpty,
+      };
+    }).toList();
+    list.sort((a, b) {
+      final result = switch (_customerSort) {
+        CustomerSort.nameAsc => TurkishText.compare(a.name, b.name),
+        CustomerSort.nameDesc => TurkishText.compare(b.name, a.name),
+        CustomerSort.newest => created(b).compareTo(created(a)),
+        CustomerSort.oldest => created(a).compareTo(created(b)),
+        CustomerSort.mostActive => activeCount(b).compareTo(activeCount(a)),
+      };
+      return result != 0 ? result : TurkishText.compare(a.name, b.name);
+    });
+    return list;
+  }
+
+  bool _inDateRange(ContractModel contract) {
+    final range = _dateRange;
+    if (range == null) return true;
+    final value = ContractDateHelper.dateOnly(
+      _dateField == ContractDateField.end
+          ? contract.endDate
+          : contract.startDate,
+    );
+    final from = ContractDateHelper.dateOnly(range.start);
+    final to = ContractDateHelper.dateOnly(range.end);
+    return !value.isBefore(from) && !value.isAfter(to);
+  }
+
+  List<ContractModel> _contractRecords() {
+    final store = widget.store;
+    final base = widget.showEndedContracts
+        ? store.endedContracts
+        : store.contracts.where((contract) => !contract.isFinalized).toList();
+    final filtered = base.where((contract) {
+      final days = DateHelper.daysUntil(contract.endDate);
+      final startsIn = DateHelper.daysUntil(contract.startDate);
+      final statusOk = widget.showEndedContracts
+          ? switch (_endedFilter) {
+              EndedContractFilter.all => true,
+              EndedContractFilter.finalized => contract.isFinalized,
+              EndedContractFilter.expired => !contract.isFinalized && days < 0,
+            }
+          : switch (_contractFilter) {
+              ContractListFilter.all => true,
+              ContractListFilter.active =>
+                store.activeContracts.any(
+                      (active) => active.id == contract.id,
+                    ) ||
+                    (contract.isActive &&
+                        !contract.isFinalized &&
+                        startsIn <= 0 &&
+                        days >= 0),
+              ContractListFilter.upcoming => days >= 0 && days <= 10,
+              ContractListFilter.notStarted => startsIn > 0,
+              ContractListFilter.passive =>
+                !contract.isActive && !contract.isFinalized,
+              ContractListFilter.expired => days < 0,
+            };
+      return statusOk && _inDateRange(contract);
+    }).toList();
+
+    String spaceName(ContractModel c) =>
+        store.adSpaceFor(c.adSpaceId)?.name ?? '';
+    String tenantName(ContractModel c) =>
+        store.customerFor(c.customerId)?.name ?? '';
     filtered.sort((a, b) {
-      final comparison = a.endDate.compareTo(b.endDate);
-      return _nearestFirst ? comparison : -comparison;
+      final result = switch (_contractSort) {
+        ContractSort.endAsc => a.endDate.compareTo(b.endDate),
+        ContractSort.endDesc => b.endDate.compareTo(a.endDate),
+        ContractSort.startDesc => b.startDate.compareTo(a.startDate),
+        ContractSort.startAsc => a.startDate.compareTo(b.startDate),
+        ContractSort.spaceAsc => TurkishText.compare(
+          spaceName(a),
+          spaceName(b),
+        ),
+        ContractSort.spaceDesc => TurkishText.compare(
+          spaceName(b),
+          spaceName(a),
+        ),
+        ContractSort.tenantAsc => TurkishText.compare(
+          tenantName(a),
+          tenantName(b),
+        ),
+        ContractSort.tenantDesc => TurkishText.compare(
+          tenantName(b),
+          tenantName(a),
+        ),
+        ContractSort.priceDesc => b.monthlyPrice.compareTo(a.monthlyPrice),
+        ContractSort.priceAsc => a.monthlyPrice.compareTo(b.monthlyPrice),
+      };
+      return result != 0 ? result : a.endDate.compareTo(b.endDate);
     });
     return filtered;
   }
 
   String _searchText(dynamic record) {
     if (record is AdSpaceModel) {
-      return '${record.name} ${record.location}'.toLowerCase();
+      final contract = widget.store.activeContractForAdSpace(record.id);
+      final tenant = contract == null
+          ? ''
+          : widget.store.customerFor(contract.customerId)?.name ?? '';
+      return '${record.name} ${record.location} ${record.description} $tenant';
     }
     if (record is CustomerModel) {
-      return '${record.name} ${record.company} ${record.phone}'.toLowerCase();
+      return '${record.name} ${record.company} ${record.address} '
+          '${record.phone} ${record.email}';
     }
     final contract = record as ContractModel;
     final customer = widget.store.customerFor(contract.customerId);
     final space = widget.store.adSpaceFor(contract.adSpaceId);
-    return '${customer?.name ?? ''} '
-            '${space?.name ?? ''}'
-        .toLowerCase();
+    return '${customer?.name ?? ''} ${customer?.company ?? ''} '
+        '${space?.name ?? ''} ${space?.location ?? ''} '
+        '${contract.notes} ${contract.responsibleUsername ?? ''}';
   }
 
   @override
@@ -168,9 +342,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            record == null
-                ? 'Kayıt eklendi.'
-                : 'Kayıt güncellendi.',
+            record == null ? 'Kayıt eklendi.' : 'Kayıt güncellendi.',
           ),
         ),
       );
@@ -215,7 +387,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
   Future<void> _showContractDetails(ContractModel contract) => showDialog<void>(
     context: context,
     builder: (context) =>
-        _ContractDetailsDialog(store: widget.store, contract: contract),
+        ContractDetailsDialog(store: widget.store, contract: contract),
   );
 
   Future<void> _showCustomerDetails(CustomerModel customer) => showDialog<void>(
@@ -241,6 +413,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       await ContractPdfService.exportContracts(
         widget.store,
         records.whereType<ContractModel>().toList(),
+        filterSummary: _filterSummary(),
       );
     } catch (error) {
       if (mounted) {
@@ -272,6 +445,452 @@ class _ManagementScreenState extends State<ManagementScreen> {
         ).showSnackBar(SnackBar(content: Text('PDF oluşturulamadı: $error')));
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Filtre, sıralama ve çoklu seçim
+  // ---------------------------------------------------------------------------
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  bool get _hasActiveFilters =>
+      _contractFilter != ContractListFilter.all ||
+      _endedFilter != EndedContractFilter.all ||
+      _customerFilter != CustomerListFilter.all ||
+      _adSpaceFilter != AdSpaceListFilter.all ||
+      _dateRange != null ||
+      _query.trim().isNotEmpty;
+
+  void _resetFilters() {
+    _searchController.clear();
+    setState(() {
+      _query = '';
+      _contractFilter = ContractListFilter.all;
+      _endedFilter = EndedContractFilter.all;
+      _customerFilter = CustomerListFilter.all;
+      _adSpaceFilter = AdSpaceListFilter.all;
+      _dateRange = null;
+      _dateField = ContractDateField.end;
+    });
+  }
+
+  String _contractFilterLabel(ContractListFilter filter) => switch (filter) {
+    ContractListFilter.all => 'Tüm sözleşmeler',
+    ContractListFilter.active => 'Aktif',
+    ContractListFilter.upcoming => 'Yaklaşan (10 gün)',
+    ContractListFilter.notStarted => 'Başlayacak',
+    ContractListFilter.passive => 'Pasif',
+    ContractListFilter.expired => 'Süresi dolanlar',
+  };
+
+  String _filterSummary() {
+    final format = DateFormat('dd.MM.yyyy');
+    final parts = <String>[];
+    if (widget.showEndedContracts) {
+      if (_endedFilter != EndedContractFilter.all) {
+        parts.add(
+          _endedFilter == EndedContractFilter.finalized
+              ? 'Bitirilenler'
+              : 'Süresi dolanlar',
+        );
+      }
+    } else if (_contractFilter != ContractListFilter.all) {
+      parts.add(_contractFilterLabel(_contractFilter));
+    }
+    final range = _dateRange;
+    if (range != null) {
+      parts.add(
+        '${_dateField == ContractDateField.end ? 'Bitiş' : 'Başlangıç'}: '
+        '${format.format(range.start)} - ${format.format(range.end)}',
+      );
+    }
+    final query = _query.trim();
+    if (query.isNotEmpty) parts.add('Arama: $query');
+    return parts.isEmpty ? 'Tüm sözleşmeler' : parts.join(' • ');
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 15),
+      lastDate: DateTime(now.year + 15),
+      initialDateRange: _dateRange,
+      helpText: 'Tarih aralığı seçin',
+      saveText: 'Uygula',
+    );
+    if (picked != null && mounted) setState(() => _dateRange = picked);
+  }
+
+  Widget _dropdown<T>({
+    required String label,
+    required T value,
+    required List<(T, String)> items,
+    required ValueChanged<T> onChanged,
+  }) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    return SizedBox(
+      width: screenWidth < 400 ? screenWidth - 72 : 230,
+      child: DropdownButtonFormField<T>(
+        key: ValueKey('$label-$value'),
+        initialValue: value,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: label),
+        items: [
+          for (final (itemValue, text) in items)
+            DropdownMenuItem<T>(
+              value: itemValue,
+              child: Text(text, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: (selected) {
+          if (selected != null) onChanged(selected);
+        },
+      ),
+    );
+  }
+
+  Widget _resetButton() => TextButton.icon(
+    onPressed: _resetFilters,
+    icon: const Icon(Icons.filter_alt_off_outlined),
+    label: const Text('Filtreleri temizle'),
+  );
+
+  List<Widget> _adSpaceControls() => [
+    const SizedBox(height: 12),
+    Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _dropdown<AdSpaceListFilter>(
+          label: 'Durum',
+          value: _adSpaceFilter,
+          items: const [
+            (AdSpaceListFilter.all, 'Tüm reklam alanları'),
+            (AdSpaceListFilter.available, 'Boş'),
+            (AdSpaceListFilter.occupied, 'Kirada'),
+            (AdSpaceListFilter.expiring, 'Süresi yaklaşan (10 gün)'),
+          ],
+          onChanged: (value) => setState(() => _adSpaceFilter = value),
+        ),
+        _dropdown<AdSpaceSort>(
+          label: 'Sırala',
+          value: _adSpaceSort,
+          items: const [
+            (AdSpaceSort.nameAsc, 'A → Z'),
+            (AdSpaceSort.nameDesc, 'Z → A'),
+            (AdSpaceSort.endAsc, 'Bitişi yakın önce'),
+            (AdSpaceSort.priceDesc, 'Kira: yüksekten düşüğe'),
+            (AdSpaceSort.priceAsc, 'Kira: düşükten yükseğe'),
+          ],
+          onChanged: (value) => setState(() => _adSpaceSort = value),
+        ),
+        if (_hasActiveFilters) _resetButton(),
+      ],
+    ),
+  ];
+
+  List<Widget> _customerControls() => [
+    const SizedBox(height: 12),
+    Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _dropdown<CustomerListFilter>(
+          label: 'Filtre',
+          value: _customerFilter,
+          items: const [
+            (CustomerListFilter.all, 'Tüm müşteriler'),
+            (CustomerListFilter.withActive, 'Aktif kiralaması olanlar'),
+            (CustomerListFilter.withoutActive, 'Aktif kiralaması olmayanlar'),
+            (CustomerListFilter.noPhone, 'Telefonu eksik olanlar'),
+          ],
+          onChanged: (value) => setState(() => _customerFilter = value),
+        ),
+        _dropdown<CustomerSort>(
+          label: 'Sırala',
+          value: _customerSort,
+          items: const [
+            (CustomerSort.nameAsc, 'A → Z'),
+            (CustomerSort.nameDesc, 'Z → A'),
+            (CustomerSort.newest, 'Eklenme: yeni önce'),
+            (CustomerSort.oldest, 'Eklenme: eski önce'),
+            (CustomerSort.mostActive, 'En çok aktif alan'),
+          ],
+          onChanged: (value) => setState(() => _customerSort = value),
+        ),
+        if (_hasActiveFilters) _resetButton(),
+      ],
+    ),
+  ];
+
+  List<Widget> _contractControls(List<dynamic> records) {
+    final ended = widget.showEndedContracts;
+    final format = DateFormat('dd.MM.yyyy');
+    final contractRecords = records.whereType<ContractModel>().toList();
+    final selected = contractRecords
+        .where((contract) => _selectedIds.contains(contract.id))
+        .toList();
+    final allSelected =
+        contractRecords.isNotEmpty && selected.length == contractRecords.length;
+    final range = _dateRange;
+    return [
+      const SizedBox(height: 12),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (!ended)
+            _dropdown<ContractListFilter>(
+              label: 'Durum',
+              value: _contractFilter,
+              items: [
+                for (final filter in ContractListFilter.values)
+                  (filter, _contractFilterLabel(filter)),
+              ],
+              onChanged: (value) => setState(() => _contractFilter = value),
+            ),
+          if (ended)
+            _dropdown<EndedContractFilter>(
+              label: 'Durum',
+              value: _endedFilter,
+              items: const [
+                (EndedContractFilter.all, 'Tüm biten sözleşmeler'),
+                (EndedContractFilter.finalized, 'Bitirilenler'),
+                (EndedContractFilter.expired, 'Süresi dolanlar'),
+              ],
+              onChanged: (value) => setState(() => _endedFilter = value),
+            ),
+          _dropdown<ContractSort>(
+            label: 'Sırala',
+            value: _contractSort,
+            items: const [
+              (ContractSort.endAsc, 'Bitiş: yakın önce'),
+              (ContractSort.endDesc, 'Bitiş: uzak önce'),
+              (ContractSort.startDesc, 'Başlangıç: yeni önce'),
+              (ContractSort.startAsc, 'Başlangıç: eski önce'),
+              (ContractSort.spaceAsc, 'Reklam alanı A → Z'),
+              (ContractSort.spaceDesc, 'Reklam alanı Z → A'),
+              (ContractSort.tenantAsc, 'Kiracı A → Z'),
+              (ContractSort.tenantDesc, 'Kiracı Z → A'),
+              (ContractSort.priceDesc, 'Bedel: yüksekten düşüğe'),
+              (ContractSort.priceAsc, 'Bedel: düşükten yükseğe'),
+            ],
+            onChanged: (value) => setState(() => _contractSort = value),
+          ),
+          // _dropdown<ContractDateField>(
+          //   label: 'Tarih alanı',
+          //   value: _dateField,
+          //   items: const [
+          //     (ContractDateField.end, 'Bitiş tarihi'),
+          //     (ContractDateField.start, 'Başlangıç tarihi'),
+          //   ],
+          //   onChanged: (value) => setState(() => _dateField = value),
+          // ),
+          OutlinedButton.icon(
+            onPressed: _pickDateRange,
+            icon: const Icon(Icons.date_range_outlined),
+            label: Text(
+              range == null
+                  ? 'İki tarih arası'
+                  : '${format.format(range.start)} - ${format.format(range.end)}',
+            ),
+          ),
+          if (range != null)
+            IconButton(
+              tooltip: 'Tarih filtresini temizle',
+              onPressed: () => setState(() => _dateRange = null),
+              icon: const Icon(Icons.close),
+            ),
+          if (_hasActiveFilters) _resetButton(),
+          OutlinedButton.icon(
+            onPressed: _toggleSelectionMode,
+            icon: Icon(_selectionMode ? Icons.close : Icons.checklist),
+            label: Text(_selectionMode ? 'Seçimi kapat' : 'Çoklu seçim'),
+          ),
+        ],
+      ),
+      if (_selectionMode) ...[
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('${selected.length} seçili'),
+                TextButton.icon(
+                  onPressed: contractRecords.isEmpty
+                      ? null
+                      : () => _selectAll(contractRecords),
+                  icon: const Icon(Icons.select_all),
+                  label: Text(allSelected ? 'Seçimi kaldır' : 'Tümünü seç'),
+                ),
+                FilledButton.icon(
+                  onPressed: selected.isEmpty ? null : () => _bulkEnd(selected),
+                  icon: const Icon(Icons.event_available_outlined),
+                  label: const Text('Bitir'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.danger,
+                  ),
+                  onPressed: selected.isEmpty
+                      ? null
+                      : () => _bulkDelete(selected),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Sil'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(ContractModel contract) {
+    setState(() {
+      if (!_selectedIds.add(contract.id)) _selectedIds.remove(contract.id);
+    });
+  }
+
+  void _selectAll(List<ContractModel> visible) {
+    final ids = visible.map((contract) => contract.id).toSet();
+    setState(() {
+      if (_selectedIds.containsAll(ids)) {
+        _selectedIds.removeAll(ids);
+      } else {
+        _selectedIds.addAll(ids);
+      }
+    });
+  }
+
+  Future<void> _bulkDelete(List<ContractModel> selected) async {
+    if (selected.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Seçilenleri sil'),
+        content: Text(
+          '${selected.length} sözleşme kalıcı olarak silinecek. '
+          'Devam etmek istiyor musunuz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    var done = 0;
+    String? error;
+    for (final contract in selected) {
+      try {
+        await widget.store.deleteContract(contract.id);
+        done++;
+      } catch (e) {
+        error = e.toString();
+      }
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.removeAll(selected.map((c) => c.id)));
+    _toast(
+      error == null
+          ? '$done sözleşme silindi.'
+          : '$done sözleşme silindi, bazıları silinemedi: $error',
+    );
+  }
+
+  Future<void> _bulkEnd(List<ContractModel> selected) async {
+    final endable = selected
+        .where((contract) => !contract.isFinalized)
+        .toList();
+    if (endable.isEmpty) {
+      _toast('Seçilen sözleşmelerin hepsi zaten bitirilmiş.');
+      return;
+    }
+    final skipped = selected.length - endable.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Seçilenleri bitir'),
+        content: Text(
+          '${endable.length} sözleşme kalıcı olarak bitenler listesine alınır. '
+          'Daha sonra yeniden açılamaz.'
+          '${skipped > 0 ? '\n$skipped sözleşme zaten bitmiş, atlanacak.' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Bitir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    var done = 0;
+    String? error;
+    for (final contract in endable) {
+      try {
+        await widget.store.markContractEnded(contract.id);
+        done++;
+      } catch (e) {
+        error = e.toString();
+      }
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.removeAll(selected.map((c) => c.id)));
+    _toast(
+      error == null
+          ? '$done sözleşme bitirildi.'
+          : '$done sözleşme bitirildi, bazıları bitirilemedi: $error',
+    );
+  }
+
+  Widget _summaryLine(List<dynamic> records) {
+    final contracts = records.whereType<ContractModel>().toList();
+    final text = widget.type == RecordType.contracts
+        ? '${contracts.length} sözleşme • Toplam bedel: '
+              '${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contracts.fold<double>(0, (sum, item) => sum + item.monthlyPrice))}'
+        : '${records.length} kayıt';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
   }
 
   Future<void> _delete(dynamic record) async {
@@ -391,7 +1010,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
     } else if (record is CustomerModel) {
       title = record.name;
       subtitle = [
-        record.company,
+        record.address,
         record.phone,
         record.email,
       ].where((part) => part.isNotEmpty).join(' • ');
@@ -405,8 +1024,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       final customer = widget.store.customerFor(contract.customerId);
       final space = widget.store.adSpaceFor(contract.adSpaceId);
       final days = DateHelper.daysUntil(contract.endDate);
-      title =
-          space?.name ?? 'Reklam alanı';
+      title = space?.name ?? 'Reklam alanı';
       subtitle =
           '${customer?.name ?? 'Kiracı'} • '
           '${DateFormat('dd.MM.yyyy').format(contract.startDate)} - '
@@ -433,12 +1051,20 @@ class _ManagementScreenState extends State<ManagementScreen> {
     return Card(
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest,
-          child: Icon(icon, color: AppColors.primary),
-        ),
+        onTap: _selectionMode && record is ContractModel
+            ? () => _toggleSelected(record)
+            : null,
+        leading: _selectionMode && record is ContractModel
+            ? Checkbox(
+                value: _selectedIds.contains(record.id),
+                onChanged: (_) => _toggleSelected(record),
+              )
+            : CircleAvatar(
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+                child: Icon(icon, color: AppColors.primary),
+              ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5),
@@ -519,10 +1145,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         value: 'renew',
                         child: Text('Sözleşmeyi uzat'),
                       ),
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Sil'),
-                      ),
+                      const PopupMenuItem(value: 'delete', child: Text('Sil')),
                     ];
                   }
                   return [
@@ -585,106 +1208,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     ),
                 ],
               ),
-              if (contracts && !widget.showEndedContracts) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.sizeOf(context).width < 400
-                            ? MediaQuery.sizeOf(context).width - 72
-                            : 260,
-                      ),
-                      child: DropdownButtonFormField<ContractListFilter>(
-                        initialValue: _contractFilter,
-                        decoration: const InputDecoration(labelText: 'Filtre'),
-                        items: const [
-                          DropdownMenuItem(
-                            value: ContractListFilter.all,
-                            child: Text('Tüm sözleşmeler'),
-                          ),
-                          DropdownMenuItem(
-                            value: ContractListFilter.active,
-                            child: Text('Aktif sözleşmeler'),
-                          ),
-                          DropdownMenuItem(
-                            value: ContractListFilter.upcoming,
-                            child: Text('Yaklaşan sözleşmeler'),
-                          ),
-                          DropdownMenuItem(
-                            value: ContractListFilter.expired,
-                            child: Text('Süresi dolanlar'),
-                          ),
-                        ],
-                        selectedItemBuilder: (context) => const [
-                          Text('Tümü', overflow: TextOverflow.ellipsis),
-                          Text('Aktif', overflow: TextOverflow.ellipsis),
-                          Text('Yaklaşan', overflow: TextOverflow.ellipsis),
-                          Text('Süresi dolan', overflow: TextOverflow.ellipsis),
-                        ],
-                        onChanged: (value) => setState(
-                          () =>
-                              _contractFilter = value ?? ContractListFilter.all,
-                        ),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          setState(() => _nearestFirst = !_nearestFirst),
-                      icon: Icon(
-                        _nearestFirst
-                            ? Icons.south_outlined
-                            : Icons.north_outlined,
-                      ),
-                      label: Text(
-                        _nearestFirst ? 'Yakın tarih önce' : 'Uzak tarih önce',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (widget.type == RecordType.adSpaces) ...[
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.sizeOf(context).width < 400
-                          ? MediaQuery.sizeOf(context).width - 72
-                          : 260,
-                    ),
-                    child: DropdownButtonFormField<AdSpaceListFilter>(
-                      initialValue: _adSpaceFilter,
-                      decoration: const InputDecoration(labelText: 'Filtre'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: AdSpaceListFilter.all,
-                          child: Text('Tüm reklam alanları'),
-                        ),
-                        DropdownMenuItem(
-                          value: AdSpaceListFilter.available,
-                          child: Text('Boş'),
-                        ),
-                        DropdownMenuItem(
-                          value: AdSpaceListFilter.occupied,
-                          child: Text('Kirada'),
-                        ),
-                      ],
-                      selectedItemBuilder: (context) => const [
-                        Text('Tümü', overflow: TextOverflow.ellipsis),
-                        Text('Boş', overflow: TextOverflow.ellipsis),
-                        Text('Kirada', overflow: TextOverflow.ellipsis),
-                      ],
-                      onChanged: (value) => setState(
-                        () => _adSpaceFilter = value ?? AdSpaceListFilter.all,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              if (contracts) ..._contractControls(records),
+              if (widget.type == RecordType.adSpaces) ..._adSpaceControls(),
+              if (widget.type == RecordType.customers) ..._customerControls(),
               const SizedBox(height: 20),
               TextField(
                 controller: _searchController,
@@ -705,6 +1231,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              if (records.isNotEmpty) _summaryLine(records),
               if (records.isEmpty)
                 Card(
                   child: SizedBox(
@@ -750,8 +1277,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
   }
 }
 
-class _ContractDetailsDialog extends StatelessWidget {
-  const _ContractDetailsDialog({required this.store, required this.contract});
+class ContractDetailsDialog extends StatelessWidget {
+  const ContractDetailsDialog({required this.store, required this.contract});
 
   final AppStore store;
   final ContractModel contract;
@@ -786,6 +1313,7 @@ class _ContractDetailsDialog extends StatelessWidget {
               Text('Alan: ${space?.name ?? 'Silinmiş reklam alanı'}'),
               Text('Başlangıç: ${dateFormat.format(contract.startDate)}'),
               Text('Bitiş: ${dateFormat.format(contract.endDate)}'),
+              Text('Kalan süre: ${contractRemainingLabel(contract)}'),
               Text(
                 'Toplam tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}',
               ),
@@ -833,6 +1361,12 @@ class _ContractDetailsDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (contract.hasPdf)
+          TextButton.icon(
+            onPressed: () => openContractPdfFile(context, contract),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Sözleşme PDF'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Kapat'),
@@ -866,8 +1400,8 @@ class _CustomerDetailsDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (customer.company.isNotEmpty)
-                Text('Firma: ${customer.company}'),
+              if (customer.address.isNotEmpty)
+                Text('Adres: ${customer.address}'),
               if (customer.phone.isNotEmpty) Text('Telefon: ${customer.phone}'),
               if (customer.email.isNotEmpty) Text('E-posta: ${customer.email}'),
               const SizedBox(height: 16),
@@ -885,21 +1419,61 @@ class _CustomerDetailsDialog extends StatelessWidget {
                     DateHelper.daysUntil(contract.endDate) < 0;
                 final startsLater =
                     DateHelper.daysUntil(contract.startDate) > 0;
+                final days = DateHelper.daysUntil(contract.endDate);
+                final remaining = ended
+                    ? 'Bitti'
+                    : startsLater
+                    ? 'Başlayacak'
+                    : ContractRemainingTime.format(days);
+                final urgent =
+                    !ended &&
+                    !startsLater &&
+                    ContractRemainingTime.isUrgent(days);
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
+                  isThreeLine: true,
                   leading: const Icon(Icons.location_city_outlined),
                   title: Text(space?.name ?? 'Silinmiş reklam alanı'),
-                  subtitle: Text(
-                    '${space?.location.isNotEmpty == true ? '${space!.location} • ' : ''}'
-                    '${dateFormat.format(contract.startDate)} - ${dateFormat.format(contract.endDate)}',
+                  subtitle: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text:
+                              '${space?.location.isNotEmpty == true ? '${space!.location} • ' : ''}'
+                              '${dateFormat.format(contract.startDate)} - ${dateFormat.format(contract.endDate)}\n',
+                        ),
+                        const TextSpan(text: 'Kalan süre: '),
+                        TextSpan(
+                          text: remaining,
+                          style: urgent
+                              ? const TextStyle(
+                                  color: AppColors.danger,
+                                  fontWeight: FontWeight.w600,
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
                   ),
-                  trailing: Text(
-                    ended
-                        ? 'Bitti'
-                        : startsLater
-                        ? 'Başlayacak'
-                        : 'Aktif',
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        ended
+                            ? 'Bitti'
+                            : startsLater
+                            ? 'Başlayacak'
+                            : 'Aktif',
+                      ),
+                      if (contract.hasPdf)
+                        IconButton(
+                          tooltip: 'Sözleşme PDF\'ini görüntüle',
+                          icon: const Icon(Icons.picture_as_pdf_outlined),
+                          onPressed: () =>
+                              openContractPdfFile(context, contract),
+                        ),
+                    ],
                   ),
                 );
               }),
@@ -938,6 +1512,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _company;
+  late final TextEditingController _address;
   late final TextEditingController _phone;
   late final TextEditingController _email;
   late final TextEditingController _location;
@@ -969,7 +1544,12 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           : '',
     );
     _company = TextEditingController(
-      text: initial is CustomerModel ? initial.company : '',
+      text: initial is CustomerModel
+          ? (initial.company.trim().isNotEmpty ? initial.company : initial.name)
+          : '',
+    );
+    _address = TextEditingController(
+      text: initial is CustomerModel ? initial.address : '',
     );
     _phone = TextEditingController(
       text: initial is CustomerModel ? initial.phone : '',
@@ -1039,6 +1619,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     for (final controller in [
       _name,
       _company,
+      _address,
       _phone,
       _email,
       _location,
@@ -1123,8 +1704,9 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
         await widget.store.saveCustomer(
           CustomerModel(
             id: id,
-            name: _name.text.trim(),
+            name: _company.text.trim(),
             company: _company.text.trim(),
+            address: _address.text.trim(),
             phone: _phone.text.trim(),
             email: _email.text.trim(),
             notes: _notes.text.trim(),
@@ -1325,8 +1907,8 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   _textField('Açıklama', _description, maxLines: 3),
                 ],
                 if (widget.type == RecordType.customers) ...[
-                  _textField('Ad soyad', _name, required: true),
-                  _textField('Firma', _company),
+                  _textField('Firma adı', _company, required: true),
+                  _textField('Adres', _address, maxLines: 2),
                   _textField(
                     'Telefon',
                     _phone,
