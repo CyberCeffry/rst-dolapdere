@@ -20,6 +20,7 @@ class ContractModel {
     this.history = const [],
     this.responsibleUserId,
     this.responsibleUsername,
+    this.pdfPath,
   });
 
   final String id;
@@ -38,6 +39,11 @@ class ContractModel {
   final List<ContractHistoryEntry> history;
   final String? responsibleUserId;
   final String? responsibleUsername;
+
+  /// Sözleşme PDF'inin 'sözleşmeler' klasörüne göre göreli yolu.
+  final String? pdfPath;
+
+  bool get hasPdf => (pdfPath ?? '').trim().isNotEmpty;
 
   factory ContractModel.fromJson(Map<String, dynamic> json) => ContractModel(
     id: json['id'] as String,
@@ -60,6 +66,7 @@ class ContractModel {
     renewedFromContractId: json['renewedFromContractId'] as String?,
     responsibleUserId: json['responsibleUserId'] as String?,
     responsibleUsername: json['responsibleUsername'] as String?,
+    pdfPath: json['pdfPath'] as String?,
     history: (json['history'] as List<dynamic>? ?? const [])
         .map(
           (entry) => ContractHistoryEntry.fromJson(
@@ -85,6 +92,7 @@ class ContractModel {
     'renewedFromContractId': renewedFromContractId,
     'responsibleUserId': responsibleUserId,
     'responsibleUsername': responsibleUsername,
+    'pdfPath': pdfPath,
     'history': history.map((entry) => entry.toJson()).toList(),
   };
 }

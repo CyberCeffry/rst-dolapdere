@@ -818,6 +818,7 @@ class AppStore extends ChangeNotifier {
           '',
       responsibleUsername:
           contract.responsibleUsername ?? existingContract?.responsibleUsername,
+      pdfPath: contract.pdfPath,
       history:
           existingContract?.history ??
           [
@@ -909,6 +910,7 @@ class AppStore extends ChangeNotifier {
       renewedFromContractId: source.renewedFromContractId,
       responsibleUserId: source.responsibleUserId,
       responsibleUsername: source.responsibleUsername,
+      pdfPath: renewed.pdfPath,
       history: [
         ...source.history,
         ContractHistoryEntry(
@@ -1101,6 +1103,7 @@ class AppStore extends ChangeNotifier {
     List<ContractHistoryEntry>? history,
     String? responsibleUserId,
     String? responsibleUsername,
+    String? pdfPath,
   }) {
     return ContractModel(
       id: source.id,
@@ -1120,6 +1123,7 @@ class AppStore extends ChangeNotifier {
       history: history ?? source.history,
       responsibleUserId: responsibleUserId ?? source.responsibleUserId,
       responsibleUsername: responsibleUsername ?? source.responsibleUsername,
+      pdfPath: pdfPath ?? source.pdfPath,
     );
   }
 

@@ -8,6 +8,7 @@ import '../../core/utils/contract_date_helper.dart';
 import '../../core/utils/contract_remaining_time.dart';
 import '../../core/utils/date_helper.dart';
 import '../contracts/services/contract_pdf_service.dart';
+import '../contracts/services/contract_file_service.dart';
 import 'services/ad_space_pdf_service.dart';
 import '../../models/ad_space_model.dart';
 import '../../models/contract_history_entry.dart';
@@ -202,6 +203,14 @@ class _ManagementScreenState extends State<ManagementScreen> {
 
   Future<void> _renewContract(ContractModel contract) =>
       _edit(contract, isRenewal: true);
+
+  Future<void> _openContractPdf(ContractModel contract) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final error = await ContractFileService.open(contract.pdfPath);
+    if (error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
 
   Future<void> _showContractDetails(ContractModel contract) => showDialog<void>(
     context: context,
@@ -434,6 +443,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     switch (value) {
                       case 'details':
                         _showContractDetails(record);
+                      case 'pdf':
+                        _openContractPdf(record);
                       case 'toggle':
                         _toggleContractActive(record);
                       case 'edit':
@@ -463,6 +474,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
                         value: 'details',
                         child: Text('Detayları görüntüle'),
                       ),
+                      if (record.hasPdf)
+                        const PopupMenuItem(
+                          value: 'pdf',
+                          child: Text('Sözleşme PDF\'ini görüntüle'),
+                        ),
                       if (!ended)
                         const PopupMenuItem(
                           value: 'edit',
@@ -910,11 +926,15 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
   late ContractDurationUnit _durationUnit;
   late bool _active;
   String? _error;
+  String? _existingPdf;
+  String? _newPdfSource;
+  bool _removePdf = false;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initial;
+    _existingPdf = initial is ContractModel ? initial.pdfPath : null;
     _name = TextEditingController(
       text: initial is AdSpaceModel
           ? initial.name
@@ -1085,6 +1105,20 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           ),
         );
       } else {
+        final customer = widget.store.customerFor(_customerId!);
+        final space = widget.store.adSpaceFor(_adSpaceId!);
+        final companyTitle = customer?.company.trim() ?? '';
+        final pdfPlan = await ContractFileService.prepare(
+          spaceName: space?.name ?? '',
+          tenantTitle: companyTitle.isNotEmpty
+              ? companyTitle
+              : (customer?.name ?? ''),
+          startDate: _startDate,
+          endDate: _endDate,
+          existingRelativePath: _existingPdf,
+          pickedSourcePath: _newPdfSource,
+          remove: _removePdf,
+        );
         final contract = ContractModel(
           id: id,
           customerId: _customerId!,
@@ -1096,14 +1130,27 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           durationCount: int.parse(_durationCount.text),
           notes: _notes.text.trim(),
           isActive: _active,
+          pdfPath: pdfPlan.relativePath,
         );
-        if (widget.isRenewal && widget.initial is ContractModel) {
-          await widget.store.renewContract(
-            (widget.initial as ContractModel).id,
-            contract,
-          );
-        } else {
-          await widget.store.saveContract(contract);
+        try {
+          if (widget.isRenewal && widget.initial is ContractModel) {
+            await widget.store.renewContract(
+              (widget.initial as ContractModel).id,
+              contract,
+            );
+          } else {
+            await widget.store.saveContract(contract);
+          }
+        } catch (_) {
+          await pdfPlan.rollback();
+          rethrow;
+        }
+        await pdfPlan.commit();
+        final pdfWarning = pdfPlan.commitWarning;
+        if (pdfWarning != null && mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(pdfWarning)));
         }
       }
       if (mounted) Navigator.pop(context, true);
@@ -1112,6 +1159,72 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     } catch (error) {
       if (mounted) setState(() => _error = 'İşlem tamamlanamadı: $error');
     }
+  }
+
+  Future<void> _pickPdf() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final path = await ContractFileService.pickPdf();
+      if (path == null || !mounted) return;
+      setState(() {
+        _newPdfSource = path;
+        _removePdf = false;
+        _error = null;
+      });
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text('PDF seçilemedi: $error')));
+    }
+  }
+
+  String _fileLabel(String path) => path.split(RegExp(r'[\\/]')).last;
+
+  Widget _pdfSection() {
+    final picked = _newPdfSource;
+    final existing = _removePdf ? null : _existingPdf;
+    final hasExisting = (existing ?? '').trim().isNotEmpty;
+    final hasAny = picked != null || hasExisting;
+    final String statusText;
+    if (picked != null) {
+      statusText = 'Seçilen PDF: ${_fileLabel(picked)}';
+    } else if (hasExisting) {
+      statusText = 'Kayıtlı PDF: ${_fileLabel(existing!)}';
+    } else if (_removePdf) {
+      statusText = 'Kaydedince PDF kaldırılacak.';
+    } else {
+      statusText = 'Henüz PDF eklenmedi.';
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          OutlinedButton.icon(
+            onPressed: _pickPdf,
+            icon: const Icon(Icons.upload_file),
+            label: Text(hasAny ? 'PDF\'i değiştir' : 'PDF yükle'),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              statusText,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (hasAny)
+            IconButton(
+              tooltip: 'PDF\'i kaldır',
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() {
+                if (picked != null) {
+                  _newPdfSource = null;
+                } else {
+                  _removePdf = true;
+                }
+              }),
+            ),
+        ],
+      ),
+    );
   }
 
   double _parsePrice() =>
@@ -1304,6 +1417,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                     ),
                   ),
                   _textField('Notlar', _notes, maxLines: 3),
+                  if (ContractFileService.isSupported) _pdfSection(),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Sözleşme aktif'),
