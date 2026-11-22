@@ -19,12 +19,13 @@ class AppColors {
 
   static const Color border = Color(0xFF293940);
   // Açık tema
-  static const Color lightBackground = Color(0xFFF4F7F8);
-  static const Color lightSurface = Colors.white;
-  static const Color lightSurfaceRaised = Color(0xFFEDF2F3);
-  static const Color lightTextPrimary = Color(0xFF18252B);
-  static const Color lightTextSecondary = Color(0xFF52636A);
-  static const Color lightBorder = Color(0xFFE1E8EA);
+  static const Color lightBackground = Color(0xFFE4E9E4);
+  static const Color lightSurface = Color.fromARGB(255, 212, 244, 165);
+  static const Color lightSurfaceRaised = Color(0xFFE9EDE6);
+  static const Color lightTextPrimary = Color(0xFF14211D);
+  static const Color lightTextSecondary = Color(0xFF4A5C56);
+  static const Color lightBorder = Color(0xFFCBD4CC);
+  static const Color lightSidebar = Color(0xFFCBD4CC); // açık sidebar
 
   /// Rozet / durum arka planı için yumuşak ton: AppColors.soft(AppColors.success)
   static Color soft(Color color, [double alpha = 0.14]) =>
@@ -32,6 +33,15 @@ class AppColors {
 
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [primary, primaryDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const Color lightPrimary = Color(0xFF0E9F95);
+  static const Color lightPrimaryDark = Color(0xFF0A7A73);
+
+  static const LinearGradient lightPrimaryGradient = LinearGradient(
+    colors: [lightPrimary, lightPrimaryDark],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

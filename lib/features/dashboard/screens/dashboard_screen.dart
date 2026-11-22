@@ -201,7 +201,7 @@ class _ExpiringContract extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
+class _SummaryCard extends StatefulWidget {
   final String title;
   final String value;
   final IconData icon;
@@ -217,67 +217,102 @@ class _SummaryCard extends StatelessWidget {
   });
 
   @override
+  State<_SummaryCard> createState() => _SummaryCardState();
+}
+
+class _SummaryCardState extends State<_SummaryCard> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final valueAndTitle = Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            );
-
-            if (constraints.maxWidth < 360) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Icon(icon, color: color, size: 28),
-                    const SizedBox(width: 14),
-                    Expanded(child: valueAndTitle),
+        onTap: widget.onTap,
+        onHover: (value) => setState(() => _hovering = value),
+        hoverColor: Colors.transparent, // ani renk değişimini kapat
+        highlightColor: Colors.transparent,
+        splashColor: widget.color.withValues(alpha: 0.12),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: _hovering ? 1 : 0),
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+          builder: (context, t, child) {
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  // 1.5 = köşeleri de kapsayacak kadar büyük yarıçap
+                  radius: t * 1.5,
+                  colors: [
+                    widget.color.withValues(alpha: 0.10),
+                    widget.color.withValues(alpha: 0.10),
+                    Colors.transparent,
                   ],
+                  stops: const [0.0, 0.98, 1.0],
                 ),
-              );
-            }
-
-            return Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(icon, color: color, size: 28),
-                  valueAndTitle,
-                ],
               ),
+              child: child,
             );
           },
+          child: _buildContent(context),
         ),
       ),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final valueAndTitle = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.value,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            Text(
+              widget.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        );
+
+        if (constraints.maxWidth < 360) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Row(
+              children: [
+                Icon(widget.icon, color: widget.color, size: 28),
+                const SizedBox(width: 14),
+                Expanded(child: valueAndTitle),
+              ],
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Icon(widget.icon, color: widget.color, size: 28),
+              valueAndTitle,
+            ],
+          ),
+        );
+      },
     );
   }
 }

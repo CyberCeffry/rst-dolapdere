@@ -19,7 +19,7 @@ class AppTheme {
     final raised = isDark
         ? AppColors.surfaceRaised
         : AppColors.lightSurfaceRaised;
-    final sidebar = isDark ? AppColors.sidebar : AppColors.lightSurface;
+    final sidebar = isDark ? AppColors.sidebar : AppColors.lightSidebar;
     final textPrimary = isDark
         ? AppColors.textPrimary
         : AppColors.lightTextPrimary;
