@@ -153,7 +153,7 @@ class ContractPdfService {
                   '',
                   '',
                   '',
-                  '',
+
                   '${currencyFormat.format(total)} + KDV',
                   '',
                 ],
@@ -176,9 +176,9 @@ class ContractPdfService {
     bool total = false,
   }) => pw.TableRow(
     decoration: header
-        ? const pw.BoxDecoration(color: PdfColors.grey200)
+        ? const pw.BoxDecoration(color: PdfColors.blue100)
         : total
-        ? const pw.BoxDecoration(color: PdfColors.grey100)
+        ? const pw.BoxDecoration(color: PdfColors.grey200)
         : null,
     children: values
         .map(
