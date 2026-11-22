@@ -30,6 +30,7 @@ class AppTheme {
     // Açık temada turkuaz beyaz üstünde zayıf kalır; koyu tonunu kullan.
     final accent = isDark ? AppColors.primary : AppColors.primaryDark;
 
+    // ignore: unused_local_variable
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(radius),
     );

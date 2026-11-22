@@ -31,13 +31,9 @@ class ContractPdfService {
     await Process.run('cmd', ['/c', 'start', '', file.path], runInShell: true);
   }
 
-  static String _status(ContractModel contract) {
-    final days = DateHelper.daysUntil(contract.endDate);
-    if (contract.isFinalized) return 'Bitti';
-    if (days < 0) return 'Süresi doldu';
-    if (!contract.isActive) return 'Pasif';
-    if (DateHelper.daysUntil(contract.startDate) > 0) return 'Başlayacak';
-    return 'Aktif';
+  static String _notes(ContractModel contract) {
+    final note = contract.notes.trim();
+    return note.isEmpty ? '-' : note;
   }
 
   static String _remaining(ContractModel contract) {
@@ -115,11 +111,11 @@ class ContractPdfService {
             columnWidths: const {
               0: pw.FlexColumnWidth(1.8),
               1: pw.FlexColumnWidth(1.8),
-              2: pw.FlexColumnWidth(1.2),
-              3: pw.FlexColumnWidth(0.9),
+              2: pw.FlexColumnWidth(1.0),
+              3: pw.FlexColumnWidth(0.6),
               4: pw.FlexColumnWidth(1.2),
               5: pw.FlexColumnWidth(1.3),
-              6: pw.FlexColumnWidth(1.3),
+              6: pw.FlexColumnWidth(1.5),
             },
             children: [
               _row(
@@ -127,10 +123,10 @@ class ContractPdfService {
                   'Reklam alanı',
                   'Kiracı',
                   'Bitiş',
-                  'Süre',
+                  'Kiralama Süresi',
                   'Kalan süre',
                   'Bedel + KDV',
-                  'Durum',
+                  'Açıklama',
                 ],
                 boldFont,
                 header: true,
@@ -148,7 +144,7 @@ class ContractPdfService {
                   '${contract.durationCount} $unit',
                   _remaining(contract),
                   currencyFormat.format(contract.monthlyPrice),
-                  _status(contract),
+                  _notes(contract),
                 ], font);
               }),
               _row(

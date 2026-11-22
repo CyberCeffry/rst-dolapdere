@@ -1278,7 +1278,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
 }
 
 class ContractDetailsDialog extends StatelessWidget {
-  const ContractDetailsDialog({required this.store, required this.contract});
+  const ContractDetailsDialog({
+    super.key,
+    required this.store,
+    required this.contract,
+  });
 
   final AppStore store;
   final ContractModel contract;
