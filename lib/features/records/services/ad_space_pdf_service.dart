@@ -58,6 +58,18 @@ class AdSpacePdfService {
     // Sıralama ekrandan gelir; burada değiştirilmez.
     final ordered = [...adSpaces];
 
+    // Toplam reklam alanı.
+    final totalAdSpaces = ordered.length;
+
+    // Aktif sözleşmesi bulunan reklam alanları.
+    // Aynı kiracı birden fazla alanda olsa da her alan ayrı sayılır.
+    final occupiedAdSpaces = ordered.where((space) {
+      return store.activeContractForAdSpace(space.id) != null;
+    }).length;
+
+    // Aktif sözleşmesi bulunmayan reklam alanları.
+    final emptyAdSpaces = totalAdSpaces - occupiedAdSpaces;
+
     document.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
@@ -110,7 +122,7 @@ class AdSpacePdfService {
             },
 
             children: [
-              // Tablo başlığı
+              // Tablo başlığı.
               _row(
                 const [
                   'Reklam alanı',
@@ -124,7 +136,7 @@ class AdSpacePdfService {
                 header: true,
               ),
 
-              // Reklam alanları (ekrandaki sırayla)
+              // Reklam alanları (ekrandaki sırayla).
               ...ordered.map((space) {
                 final contract = store.activeContractForAdSpace(space.id);
 
@@ -145,7 +157,11 @@ class AdSpacePdfService {
                     contract == null
                         ? '-'
                         : dateFormat.format(contract.endDate),
-                    contract == null ? '-' : ContractRemainingTime.formatDetailed(contract.endDate),
+                    contract == null
+                        ? '-'
+                        : ContractRemainingTime.formatDetailed(
+                            contract.endDate,
+                          ),
                     isEmpty ? 'Boş' : 'Kirada',
                     contract?.responsibleUsername ?? '-',
                   ],
@@ -161,6 +177,20 @@ class AdSpacePdfService {
                       : null,
                 );
               }),
+
+              // Toplam reklam alanı, dolu ve boş alan özeti.
+              _row(
+                [
+                  'TOPLAM $totalAdSpaces ALAN',
+                  'TOPLAM $occupiedAdSpaces DOLU',
+                  '',
+                  '',
+                  'TOPLAM $emptyAdSpaces BOŞ',
+                  '',
+                ],
+                boldFont,
+                total: true,
+              ),
             ],
           ),
         ],
@@ -175,10 +205,11 @@ class AdSpacePdfService {
     pw.Font font, {
     bool header = false,
     bool empty = false,
+    bool total = false,
     PdfColor? remainingColor,
   }) {
     return pw.TableRow(
-      decoration: header
+      decoration: header || total
           ? const pw.BoxDecoration(color: PdfColors.grey200)
           : empty
           ? const pw.BoxDecoration(color: PdfColors.yellow100)
@@ -192,6 +223,11 @@ class AdSpacePdfService {
             style: pw.TextStyle(
               font: font,
               fontSize: 8,
+
+              // Başlık ve toplam satırları kalın.
+              fontWeight: header || total
+                  ? pw.FontWeight.bold
+                  : pw.FontWeight.normal,
 
               // Yalnızca kalan süre sütununun rengi değişir.
               color: entry.$1 == 3 ? remainingColor : null,
