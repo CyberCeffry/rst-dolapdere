@@ -132,43 +132,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Görünüm',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<ThemeMode>(
-                    initialValue: store.themeMode.value,
-                    decoration: const InputDecoration(
-                      labelText: 'Tema',
-                      prefixIcon: Icon(Icons.palette_outlined),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: ThemeMode.light,
-                        child: Text('Açık'),
-                      ),
-                      DropdownMenuItem(
-                        value: ThemeMode.dark,
-                        child: Text('Koyu'),
-                      ),
-                      DropdownMenuItem(
-                        value: ThemeMode.system,
-                        child: Text('Sistem'),
-                      ),
-                    ],
-                    onChanged: _setThemeMode,
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Card(
+          //   child: Padding(
+          //     padding: const EdgeInsets.all(20),
+          //     child: Column(
+          //       crossAxisAlignment: CrossAxisAlignment.start,
+          //       children: [
+          //         const Text(
+          //           'Görünüm',
+          //           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          //         ),
+          //         const SizedBox(height: 12),
+          //         DropdownButtonFormField<ThemeMode>(
+          //           initialValue: store.themeMode.value,
+          //           decoration: const InputDecoration(
+          //             labelText: 'Tema',
+          //             prefixIcon: Icon(Icons.palette_outlined),
+          //           ),
+          //           items: const [
+          //             DropdownMenuItem(
+          //               value: ThemeMode.light,
+          //               child: Text('Açık'),
+          //             ),
+          //             DropdownMenuItem(
+          //               value: ThemeMode.dark,
+          //               child: Text('Koyu'),
+          //             ),
+          //             DropdownMenuItem(
+          //               value: ThemeMode.system,
+          //               child: Text('Sistem'),
+          //             ),
+          //           ],
+          //           onChanged: _setThemeMode,
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
           const SizedBox(height: 16),
           Card(
             child: Column(

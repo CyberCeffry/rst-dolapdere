@@ -20,7 +20,7 @@ class AppColors {
   static const Color border = Color(0xFF293940);
   // Açık tema
   static const Color lightBackground = Color(0xFFE4E9E4);
-  static const Color lightSurface = Color.fromARGB(255, 212, 244, 165);
+  static const Color lightSurface = Color.fromARGB(255, 241, 241, 241);
   static const Color lightSurfaceRaised = Color(0xFFE9EDE6);
   static const Color lightTextPrimary = Color(0xFF14211D);
   static const Color lightTextSecondary = Color(0xFF4A5C56);

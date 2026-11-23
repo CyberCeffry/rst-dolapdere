@@ -10,11 +10,19 @@ import '../../../core/utils/contract_remaining_time.dart';
 import '../../../models/ad_space_model.dart';
 
 class AdSpacePdfService {
+  /// [adSpaces] ekranda o an görünen (filtrelenmiş ve sıralanmış) listedir.
+  /// PDF bu sırayı aynen kullanır; ayrıca yeniden sıralama yapılmaz.
+  /// [filterSummary] verilirse başlığın altında "Filtre: ..." satırı olarak yazılır.
   static Future<void> exportAdSpaces(
     AppStore store,
-    List<AdSpaceModel> adSpaces,
-  ) async {
-    final bytes = await buildAdSpacesPdf(store, adSpaces);
+    List<AdSpaceModel> adSpaces, {
+    String? filterSummary,
+  }) async {
+    final bytes = await buildAdSpacesPdf(
+      store,
+      adSpaces,
+      filterSummary: filterSummary,
+    );
 
     final fileName =
         'rst-reklam-alanlari-${DateTime.now().millisecondsSinceEpoch}.pdf';
@@ -30,8 +38,9 @@ class AdSpacePdfService {
 
   static Future<Uint8List> buildAdSpacesPdf(
     AppStore store,
-    List<AdSpaceModel> adSpaces,
-  ) async {
+    List<AdSpaceModel> adSpaces, {
+    String? filterSummary,
+  }) async {
     final fontData = await rootBundle.load(
       'assets/fonts/NotoSans-Variable.ttf',
     );
@@ -46,7 +55,8 @@ class AdSpacePdfService {
       subject: 'Reklam alanı ve kiracı durumu',
     );
 
-    final sorted = [...adSpaces]..sort((a, b) => a.name.compareTo(b.name));
+    // Sıralama ekrandan gelir; burada değiştirilmez.
+    final ordered = [...adSpaces];
 
     document.addPage(
       pw.MultiPage(
@@ -56,14 +66,27 @@ class AdSpacePdfService {
 
         header: (context) => pw.Padding(
           padding: const pw.EdgeInsets.only(bottom: 14),
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Text(
-                'RST DOLAPDERE  |  REKLAM ALANLARI',
-                style: pw.TextStyle(font: boldFont, fontSize: 16),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'RST DOLAPDERE  |  REKLAM ALANLARI',
+                    style: pw.TextStyle(font: boldFont, fontSize: 16),
+                  ),
+                  pw.Text('Dışa aktarma: ${dateFormat.format(DateTime.now())}'),
+                ],
               ),
-              pw.Text('Dışa aktarma: ${dateFormat.format(DateTime.now())}'),
+              if (filterSummary != null && filterSummary.isNotEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(top: 4),
+                  child: pw.Text(
+                    'Filtre: $filterSummary',
+                    style: pw.TextStyle(font: font, fontSize: 9),
+                  ),
+                ),
             ],
           ),
         ),
@@ -83,6 +106,7 @@ class AdSpacePdfService {
               2: pw.FlexColumnWidth(1.3),
               3: pw.FlexColumnWidth(1.2),
               4: pw.FlexColumnWidth(1.2),
+              5: pw.FlexColumnWidth(1.4),
             },
 
             children: [
@@ -100,8 +124,8 @@ class AdSpacePdfService {
                 header: true,
               ),
 
-              // Reklam alanları
-              ...sorted.map((space) {
+              // Reklam alanları (ekrandaki sırayla)
+              ...ordered.map((space) {
                 final contract = store.activeContractForAdSpace(space.id);
 
                 final customer = contract == null
@@ -121,7 +145,7 @@ class AdSpacePdfService {
                     contract == null
                         ? '-'
                         : dateFormat.format(contract.endDate),
-                    days == null ? '-' : ContractRemainingTime.format(days),
+                    contract == null ? '-' : ContractRemainingTime.formatDetailed(contract.endDate),
                     isEmpty ? 'Boş' : 'Kirada',
                     contract?.responsibleUsername ?? '-',
                   ],

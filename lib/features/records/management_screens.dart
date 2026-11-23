@@ -161,13 +161,30 @@ class _ManagementScreenState extends State<ManagementScreen> {
           : ContractRemainingTime.daysUntil(contract.endDate);
     }
 
+    // Tutar: kiracının aktif sözleşme tutarı. Kiracısız (boş) alanlar
+    // hem artan hem azalan sıralamada listenin sonuna gider.
+    double? tutar(AdSpaceModel space) =>
+        store.activeContractForAdSpace(space.id)?.monthlyPrice;
+    int priceOrder(
+      AdSpaceModel a,
+      AdSpaceModel b, {
+      required bool descending,
+    }) {
+      final x = tutar(a);
+      final y = tutar(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return descending ? y.compareTo(x) : x.compareTo(y);
+    }
+
     list.sort((a, b) {
       final result = switch (_adSpaceSort) {
         AdSpaceSort.nameAsc => TurkishText.compare(a.name, b.name),
         AdSpaceSort.nameDesc => TurkishText.compare(b.name, a.name),
         AdSpaceSort.endAsc => endDays(a).compareTo(endDays(b)),
-        AdSpaceSort.priceDesc => b.monthlyPrice.compareTo(a.monthlyPrice),
-        AdSpaceSort.priceAsc => a.monthlyPrice.compareTo(b.monthlyPrice),
+        AdSpaceSort.priceDesc => priceOrder(a, b, descending: true),
+        AdSpaceSort.priceAsc => priceOrder(a, b, descending: false),
       };
       return result != 0 ? result : TurkishText.compare(a.name, b.name);
     });
@@ -586,8 +603,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
             (AdSpaceSort.nameAsc, 'A → Z'),
             (AdSpaceSort.nameDesc, 'Z → A'),
             (AdSpaceSort.endAsc, 'Bitişi yakın önce'),
-            (AdSpaceSort.priceDesc, 'Kira: yüksekten düşüğe'),
-            (AdSpaceSort.priceAsc, 'Kira: düşükten yükseğe'),
+            (AdSpaceSort.priceDesc, 'Tutar: yüksekten düşüğe'),
+            (AdSpaceSort.priceAsc, 'Tutar: düşükten yükseğe'),
           ],
           onChanged: (value) => setState(() => _adSpaceSort = value),
         ),
@@ -992,6 +1009,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 text:
                     'Bitiş: ${DateFormat('dd.MM.yyyy').format(contract.endDate)}\n',
               ),
+              TextSpan(
+                text:
+                    'Tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}\n',
+              ),
               const TextSpan(text: 'Kalan süre: '),
               TextSpan(
                 text: ContractRemainingTime.format(days!),
@@ -1049,7 +1070,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
     }
 
     return Card(
-      child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: _HoverFill(
+        color: record is AdSpaceModel ? statusColor : null,
+        child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         onTap: _selectionMode && record is ContractModel
             ? () => _toggleSelected(record)
@@ -1162,6 +1186,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -1273,6 +1298,86 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Fare üzerine gelince içi merkezden dışa doğru [color] ile dolan alan.
+/// (Ana paneldeki özet kartlarıyla aynı efekt; geniş kartlarda kare gradyan
+/// kartın boyuna uzatılarak elips olarak yayılır.) [color] null ise etkisizdir.
+class _HoverFill extends StatefulWidget {
+  const _HoverFill({required this.child, this.color});
+
+  final Widget child;
+  final Color? color;
+
+  @override
+  State<_HoverFill> createState() => _HoverFillState();
+}
+
+class _HoverFillState extends State<_HoverFill> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    if (color == null) return widget.child;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: _hovering ? 1 : 0),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, child) => Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final height = constraints.maxHeight;
+                    if (!width.isFinite ||
+                        !height.isFinite ||
+                        width <= 0 ||
+                        height <= 0) {
+                      return const SizedBox.shrink();
+                    }
+                    // Yüksekliği kenar kabul eden kare gradyan, yatayda
+                    // kartın genişliğine uzatılır (daire -> elips).
+                    return Center(
+                      child: Transform.scale(
+                        scaleX: width / height,
+                        scaleY: 1,
+                        child: SizedBox(
+                          width: height,
+                          height: height,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                center: Alignment.center,
+                                radius: t * 0.75,
+                                colors: [
+                                  color.withValues(alpha: 0.12),
+                                  color.withValues(alpha: 0.12),
+                                  Colors.transparent,
+                                ],
+                                stops: const [0.0, 0.98, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            child!,
+          ],
+        ),
+        child: widget.child,
+      ),
     );
   }
 }

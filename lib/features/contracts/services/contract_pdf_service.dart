@@ -41,7 +41,7 @@ class ContractPdfService {
     final days = DateHelper.daysUntil(contract.endDate);
     if (days < 0) return '-';
     if (days == 0) return 'Bugün';
-    return ContractRemainingTime.format(days);
+    return ContractRemainingTime.formatDetailed(contract.endDate);
   }
 
   static Future<Uint8List> buildContractsPdf(
@@ -153,7 +153,7 @@ class ContractPdfService {
                   '',
                   '',
                   '',
-
+                  '',
                   '${currencyFormat.format(total)} + KDV',
                   '',
                 ],
