@@ -165,11 +165,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
     // hem artan hem azalan sıralamada listenin sonuna gider.
     double? tutar(AdSpaceModel space) =>
         store.activeContractForAdSpace(space.id)?.monthlyPrice;
-    int priceOrder(
-      AdSpaceModel a,
-      AdSpaceModel b, {
-      required bool descending,
-    }) {
+    int priceOrder(AdSpaceModel a, AdSpaceModel b, {required bool descending}) {
       final x = tutar(a);
       final y = tutar(b);
       if (x == null && y == null) return 0;
@@ -1024,7 +1020,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       }
       icon = Icons.location_city_outlined;
       status = contract == null ? 'Boş' : 'Kirada';
-      statusColor = contract == null ? AppColors.success : AppColors.primary;
+      statusColor = contract == null ? AppColors.info : AppColors.contract;
       if (days != null && ContractRemainingTime.isUrgent(days)) {
         statusColor = AppColors.danger;
       }
@@ -1074,118 +1070,130 @@ class _ManagementScreenState extends State<ManagementScreen> {
       child: _HoverFill(
         color: record is AdSpaceModel ? statusColor : null,
         child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        onTap: _selectionMode && record is ContractModel
-            ? () => _toggleSelected(record)
-            : null,
-        leading: _selectionMode && record is ContractModel
-            ? Checkbox(
-                value: _selectedIds.contains(record.id),
-                onChanged: (_) => _toggleSelected(record),
-              )
-            : CircleAvatar(
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
-                child: Icon(icon, color: AppColors.primary),
-              ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child:
-              subtitleWidget ??
-              Text(subtitle.isEmpty ? 'Ek bilgi bulunmuyor' : subtitle),
-        ),
-        trailing: SizedBox(
-          width: 250,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Flexible(
-                child: Text(
-                  status,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 8,
+          ),
+          onTap: _selectionMode && record is ContractModel
+              ? () => _toggleSelected(record)
+              : null,
+          leading: _selectionMode && record is ContractModel
+              ? Checkbox(
+                  value: _selectedIds.contains(record.id),
+                  onChanged: (_) => _toggleSelected(record),
+                )
+              : CircleAvatar(
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
+                  child: Icon(icon, color: AppColors.primary),
+                ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child:
+                subtitleWidget ??
+                Text(subtitle.isEmpty ? 'Ek bilgi bulunmuyor' : subtitle),
+          ),
+          trailing: SizedBox(
+            width: 250,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(
+                    status,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Kayıt işlemleri',
-                onSelected: (value) {
-                  if (record is ContractModel) {
-                    switch (value) {
-                      case 'details':
-                        _showContractDetails(record);
-                      case 'pdf':
-                        _openContractPdf(record);
-                      case 'toggle':
-                        _toggleContractActive(record);
-                      case 'edit':
-                        _edit(record);
-                      case 'end':
-                        _markContractEnded(record);
-                      case 'renew':
-                        _renewContract(record);
-                      case 'delete':
-                        _delete(record);
+                PopupMenuButton<String>(
+                  tooltip: 'Kayıt işlemleri',
+                  onSelected: (value) {
+                    if (record is ContractModel) {
+                      switch (value) {
+                        case 'details':
+                          _showContractDetails(record);
+                        case 'pdf':
+                          _openContractPdf(record);
+                        case 'toggle':
+                          _toggleContractActive(record);
+                        case 'edit':
+                          _edit(record);
+                        case 'end':
+                          _markContractEnded(record);
+                        case 'renew':
+                          _renewContract(record);
+                        case 'delete':
+                          _delete(record);
+                      }
+                    } else if (record is CustomerModel && value == 'details') {
+                      _showCustomerDetails(record);
+                    } else if (value == 'edit') {
+                      _edit(record);
+                    } else {
+                      _delete(record);
                     }
-                  } else if (record is CustomerModel && value == 'details') {
-                    _showCustomerDetails(record);
-                  } else if (value == 'edit') {
-                    _edit(record);
-                  } else {
-                    _delete(record);
-                  }
-                },
-                itemBuilder: (context) {
-                  if (record is ContractModel) {
-                    final ended =
-                        record.isFinalized ||
-                        DateHelper.daysUntil(record.endDate) < 0;
+                  },
+                  itemBuilder: (context) {
+                    if (record is ContractModel) {
+                      final ended =
+                          record.isFinalized ||
+                          DateHelper.daysUntil(record.endDate) < 0;
+                      return [
+                        const PopupMenuItem(
+                          value: 'details',
+                          child: Text('Detayları görüntüle'),
+                        ),
+                        if (record.hasPdf)
+                          const PopupMenuItem(
+                            value: 'pdf',
+                            child: Text('Sözleşme PDF\'ini görüntüle'),
+                          ),
+                        if (!ended)
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('Düzenle'),
+                          ),
+                        if (!record.isFinalized)
+                          const PopupMenuItem(
+                            value: 'end',
+                            child: Text('Bitti olarak işaretle'),
+                          ),
+                        const PopupMenuItem(
+                          value: 'renew',
+                          child: Text('Sözleşmeyi uzat'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Sil'),
+                        ),
+                      ];
+                    }
                     return [
-                      const PopupMenuItem(
-                        value: 'details',
-                        child: Text('Detayları görüntüle'),
-                      ),
-                      if (record.hasPdf)
+                      if (record is CustomerModel)
                         const PopupMenuItem(
-                          value: 'pdf',
-                          child: Text('Sözleşme PDF\'ini görüntüle'),
-                        ),
-                      if (!ended)
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Text('Düzenle'),
-                        ),
-                      if (!record.isFinalized)
-                        const PopupMenuItem(
-                          value: 'end',
-                          child: Text('Bitti olarak işaretle'),
+                          value: 'details',
+                          child: Text('Detayları görüntüle'),
                         ),
                       const PopupMenuItem(
-                        value: 'renew',
-                        child: Text('Sözleşmeyi uzat'),
+                        value: 'edit',
+                        child: Text('Düzenle'),
                       ),
                       const PopupMenuItem(value: 'delete', child: Text('Sil')),
                     ];
-                  }
-                  return [
-                    if (record is CustomerModel)
-                      const PopupMenuItem(
-                        value: 'details',
-                        child: Text('Detayları görüntüle'),
-                      ),
-                    const PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-                    const PopupMenuItem(value: 'delete', child: Text('Sil')),
-                  ];
-                },
-              ),
-            ],
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );

@@ -106,14 +106,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _setThemeMode(ThemeMode? mode) async {
-    if (mode == null) return;
-    try {
-      await store.setThemeMode(mode);
-    } catch (error) {
-      if (mounted) _showMessage('Tema tercihi kaydedilemedi: $error');
-    }
-  }
+  // Future<void> _setThemeMode(ThemeMode? mode) async {
+  //   if (mode == null) return;
+  //   try {
+  //     await store.setThemeMode(mode);
+  //   } catch (error) {
+  //     if (mounted) _showMessage('Tema tercihi kaydedilemedi: $error');
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(

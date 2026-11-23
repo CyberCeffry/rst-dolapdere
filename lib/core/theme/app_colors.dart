@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   static const Color primary = Color(0xFF48E5D2);
   static const Color primaryDark = Color(0xFF16AFA7);
+  static const Color contract = Color.fromARGB(255, 0, 233, 12);
 
   static const Color background = Color(0xFF0B1115);
   static const Color surface = Color(0xFF141E24);
@@ -14,6 +15,7 @@ class AppColors {
   static const Color textSecondary = Color(0xFF9AADB2);
 
   static const Color success = Color(0xFF57D99A);
+  static const Color info = Color(0xFFFF0000);
   static const Color warning = Color(0xFFFFC45B);
   static const Color danger = Color(0xFFFF6B7F);
 
