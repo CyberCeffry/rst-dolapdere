@@ -8,6 +8,7 @@ import '../../core/utils/contract_date_helper.dart';
 import '../../core/utils/contract_remaining_time.dart';
 import '../../core/utils/date_helper.dart';
 import '../../core/utils/turkish_text.dart';
+import '../../shared/widgets/searchable_picker.dart';
 import '../contracts/services/contract_pdf_service.dart';
 import '../contracts/services/contract_file_service.dart';
 import 'services/ad_space_pdf_service.dart';
@@ -991,7 +992,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ? null
           : ContractRemainingTime.daysUntil(contract.endDate);
       title = record.name;
-      subtitle = contract == null ? 'Kiracı yok' : '';
+      final reservedBy = widget.store.reservedByNameFor(record.id);
+      subtitle = contract == null
+          ? 'Kiracı yok${reservedBy == null ? '' : '\nRezerve: $reservedBy'}'
+          : '';
       if (contract != null) {
         final remainingStyle =
             days != null && ContractRemainingTime.isUrgent(days)
@@ -1014,6 +1018,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 text: ContractRemainingTime.format(days!),
                 style: remainingStyle,
               ),
+              if (reservedBy != null) TextSpan(text: '\nRezerve: $reservedBy'),
             ],
           ),
         );
@@ -2039,38 +2044,37 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   _textField('Notlar', _notes, maxLines: 3),
                 ],
                 if (isContract) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: _customerId,
-                    decoration: const InputDecoration(labelText: 'Müşteri'),
-                    items: widget.store.customers
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.name),
-                          ),
-                        )
-                        .toList(),
+                  SearchablePicker<String>(
+                    label: 'Müşteri',
+                    value: _customerId,
+                    items: [
+                      for (final item in widget.store.customers)
+                        PickerItem<String>(
+                          value: item.id,
+                          label: item.name,
+                          subtitle: item.phone.isEmpty ? null : item.phone,
+                          searchText:
+                              '${item.company} ${item.address} ${item.email}',
+                        ),
+                    ],
                     onChanged: (value) => setState(() => _customerId = value),
-                    validator: (value) =>
-                        value == null ? 'Müşteri seçin.' : null,
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _adSpaceId,
-                    decoration: const InputDecoration(
-                      labelText: 'Reklam alanı',
-                    ),
-                    items: widget.store.adSpaces
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item.id,
-                            child: Text(item.name),
-                          ),
-                        )
-                        .toList(),
+                  const SizedBox(height: 14),
+                  SearchablePicker<String>(
+                    label: 'Reklam alanı',
+                    value: _adSpaceId,
+                    items: [
+                      for (final item in widget.store.adSpaces)
+                        PickerItem<String>(
+                          value: item.id,
+                          label: item.name,
+                          subtitle: item.location.isEmpty
+                              ? null
+                              : item.location,
+                          searchText: item.description,
+                        ),
+                    ],
                     onChanged: (value) => setState(() => _adSpaceId = value),
-                    validator: (value) =>
-                        value == null ? 'Reklam alanı seçin.' : null,
                   ),
                   const SizedBox(height: 12),
                   Align(

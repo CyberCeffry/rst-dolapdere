@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Cihazda küçük
 import '../../models/ad_space_model.dart'; // Reklam alanı modeli
 import '../../models/contract_history_entry.dart'; // Sözleşme geçmişi kaydı
 import '../../models/contract_model.dart'; // Sözleşme modeli
+import '../../models/reservation_model.dart';
 import '../../models/customer_model.dart'; // Müşteri modeli
 import '../utils/date_helper.dart'; // Tarih yardımcıları
 import 'background_sync.dart'; // Android arka plan eşitleme
@@ -48,6 +49,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     _customers = _readList('customers', CustomerModel.fromJson);
     _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
     _contracts = _readList('contracts', ContractModel.fromJson);
+    _reservations = _readList('reservations', ReservationModel.fromJson);
 
     // Hatırlatma ayarlarını yükle (yoksa varsayılan değerler).
     phoneRemindersEnabled =
@@ -85,6 +87,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   late List<CustomerModel> _customers;
   late List<AdSpaceModel> _adSpaces;
   late List<ContractModel> _contracts;
+  late List<ReservationModel> _reservations;
 
   Timer? _syncTimer; // Periyodik eşitleme zamanlayıcısı
   Future<void> _syncLock =
@@ -147,6 +150,22 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   List<CustomerModel> get customers => List.unmodifiable(_customers);
   List<AdSpaceModel> get adSpaces => List.unmodifiable(_adSpaces);
   List<ContractModel> get contracts => List.unmodifiable(_contracts);
+  List<ReservationModel> get reservations => List.unmodifiable(_reservations);
+
+  /// Reklam alanı için bekleyen rezervasyon (yoksa null).
+  ReservationModel? reservationForAdSpace(String adSpaceId) {
+    for (final reservation in _reservations) {
+      if (reservation.adSpaceId == adSpaceId) return reservation;
+    }
+    return null;
+  }
+
+  /// Reklam alanını rezerve eden müşterinin adı (rezervasyon yoksa null).
+  String? reservedByNameFor(String adSpaceId) {
+    final reservation = reservationForAdSpace(adSpaceId);
+    if (reservation == null) return null;
+    return customerFor(reservation.customerId)?.name ?? 'Müşteri';
+  }
 
   // workspaces/rst_dolapdere/<name> koleksiyon referansı.
   CollectionReference<Map<String, dynamic>> _collection(String name) =>
@@ -289,6 +308,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     'customers',
     'adSpaces',
     'contracts',
+    'reservations',
   ]; // Eşitlenen koleksiyonlar
   static const Duration _networkTimeout = Duration(
     seconds: 20,
@@ -414,11 +434,13 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       final changed =
           _differs('customers', _customers) ||
           _differs('adSpaces', _adSpaces) ||
-          _differs('contracts', _contracts);
+          _differs('contracts', _contracts) ||
+          _differs('reservations', _reservations);
       if (changed) {
         _customers = _readList('customers', CustomerModel.fromJson);
         _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
         _contracts = _readList('contracts', ContractModel.fromJson);
+        _reservations = _readList('reservations', ReservationModel.fromJson);
         _publishSyncStatus();
         notifyListeners(); // Ekranları yenile
       }
@@ -598,6 +620,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   List<dynamic> _listFor(String name) => switch (name) {
     'customers' => _customers,
     'adSpaces' => _adSpaces,
+    'reservations' => _reservations,
     _ => _contracts,
   };
 
@@ -608,6 +631,8 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
         _customers = items.cast<CustomerModel>().toList();
       case 'adSpaces':
         _adSpaces = items.cast<AdSpaceModel>().toList();
+      case 'reservations':
+        _reservations = items.cast<ReservationModel>().toList();
       default:
         _contracts = items.cast<ContractModel>().toList();
     }
@@ -617,6 +642,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   dynamic _decode(String name, Map<String, dynamic> json) => switch (name) {
     'customers' => CustomerModel.fromJson(json),
     'adSpaces' => AdSpaceModel.fromJson(json),
+    'reservations' => ReservationModel.fromJson(json),
     _ => ContractModel.fromJson(json),
   };
 
@@ -926,6 +952,12 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
 
+    if (_reservations.any((item) => item.customerId == id)) {
+      throw StateError(
+        'Bu müşteriye ait rezervasyon var. Önce rezervasyonu silin.',
+      );
+    }
+
     _customers.removeWhere((customer) => customer.id == id);
 
     await _saveList('customers', _customers);
@@ -956,12 +988,48 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
 
+    if (_reservations.any((item) => item.adSpaceId == id)) {
+      throw StateError(
+        'Bu reklam alanı için rezervasyon var. Önce rezervasyonu silin.',
+      );
+    }
+
     _adSpaces.removeWhere((space) => space.id == id);
 
     await _saveList('adSpaces', _adSpaces);
 
     unawaited(_deleteRemote('adSpaces', id));
 
+    notifyListeners();
+  }
+
+  // Rezervasyon ekle/güncelle (reklam alanı başına tek rezervasyon).
+  Future<void> saveReservation(ReservationModel reservation) async {
+    if (!_adSpaces.any((space) => space.id == reservation.adSpaceId)) {
+      throw StateError('Reklam alanı bulunamadı.');
+    }
+    if (!_customers.any((customer) => customer.id == reservation.customerId)) {
+      throw StateError('Müşteri bulunamadı.');
+    }
+    if (_reservations.any(
+      (item) =>
+          item.id != reservation.id && item.adSpaceId == reservation.adSpaceId,
+    )) {
+      throw StateError(
+        'Bu reklam alanı için zaten bir rezervasyon var. '
+        'Önce mevcut rezervasyonu düzenleyin veya silin.',
+      );
+    }
+    _reservations = _upsert(_reservations, reservation, (item) => item.id);
+    await _persistCollection('reservations', [reservation]);
+    notifyListeners();
+  }
+
+  // Rezervasyon sil.
+  Future<void> deleteReservation(String id) async {
+    _reservations.removeWhere((item) => item.id == id);
+    await _saveList('reservations', _reservations);
+    unawaited(_deleteRemote('reservations', id));
     notifyListeners();
   }
 

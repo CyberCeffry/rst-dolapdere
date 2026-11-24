@@ -130,7 +130,7 @@ class AdSpacePdfService {
                   'Bitiş tarihi',
                   'Kalan süre',
                   'Durum',
-                  'Sorumlu',
+                  'Rezerve',
                 ],
                 boldFont,
                 header: true,
@@ -163,7 +163,7 @@ class AdSpacePdfService {
                             contract.endDate,
                           ),
                     isEmpty ? 'Boş' : 'Kirada',
-                    contract?.responsibleUsername ?? '-',
+                    store.reservedByNameFor(space.id) ?? '-',
                   ],
                   font,
 

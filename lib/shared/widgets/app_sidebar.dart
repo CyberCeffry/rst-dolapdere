@@ -35,6 +35,10 @@ class AppSidebar extends StatelessWidget {
       icon: Icon(Icons.settings_outlined),
       label: 'Ayarlar',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.bookmark_border),
+      label: 'Rezervasyonlar',
+    ),
   ];
 
   @override
@@ -87,5 +91,6 @@ class AppSidebar extends StatelessWidget {
     'Biten Sözleşmeler',
     'Bildirimler',
     'Ayarlar',
+    'Rezervasyonlar',
   ];
 }
