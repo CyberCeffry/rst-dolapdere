@@ -192,7 +192,10 @@ class _SpaceBackdrop extends StatelessWidget {
         gradient: RadialGradient(
           center: alignment,
           radius: radius,
-          colors: [color.withValues(alpha: alpha), Colors.transparent],
+          colors: [
+            color.withValues(alpha: alpha),
+            Colors.transparent,
+          ],
         ),
       ),
     );

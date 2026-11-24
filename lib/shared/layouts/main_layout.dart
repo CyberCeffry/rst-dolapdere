@@ -409,58 +409,58 @@ class MainLayoutState extends State<MainLayout> {
                 Expanded(
                   child: Column(
                     children: [
-                      Container(
-                        height: 72,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isDesktop ? 24 : 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          border: Border(
-                            bottom: BorderSide(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                pageTitles[selectedIndex],
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                            Icon(
-                              Icons.account_circle_outlined,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              size: 28,
-                            ),
-                            if (isDesktop) ...[
-                              const SizedBox(width: 8),
-                              Text(
-                                'Yönetici',
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                      // Container(
+                      //   height: 72,
+                      //   padding: EdgeInsets.symmetric(
+                      //     horizontal: isDesktop ? 24 : 16,
+                      //   ),
+                      //   decoration: BoxDecoration(
+                      //     color: Theme.of(context).colorScheme.surface,
+                      //     border: Border(
+                      //       bottom: BorderSide(
+                      //         color: Theme.of(
+                      //           context,
+                      //         ).colorScheme.outlineVariant,
+                      //       ),
+                      //     ),
+                      //   ),
+                      //   child: Row(
+                      //     children: [
+                      //       Expanded(
+                      //         child: Text(
+                      //           pageTitles[selectedIndex],
+                      //           maxLines: 1,
+                      //           overflow: TextOverflow.ellipsis,
+                      //           style: TextStyle(
+                      //             fontSize: 20,
+                      //             fontWeight: FontWeight.bold,
+                      //             color: Theme.of(
+                      //               context,
+                      //             ).colorScheme.onSurface,
+                      //           ),
+                      //         ),
+                      //       ),
+                      //       Icon(
+                      //         Icons.account_circle_outlined,
+                      //         color: Theme.of(
+                      //           context,
+                      //         ).colorScheme.onSurfaceVariant,
+                      //         size: 28,
+                      //       ),
+                      //       if (isDesktop) ...[
+                      //         const SizedBox(width: 8),
+                      //         Text(
+                      //           'Yönetici',
+                      //           style: TextStyle(
+                      //             color: Theme.of(
+                      //               context,
+                      //             ).colorScheme.onSurface,
+                      //           ),
+                      //         ),
+                      //       ],
+                      //     ],
+                      //   ),
+                      // ),
                       Expanded(child: getSelectedPage()),
                     ],
                   ),

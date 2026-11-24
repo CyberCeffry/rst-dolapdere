@@ -1023,6 +1023,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 text: ContractRemainingTime.format(days!),
                 style: remainingStyle,
               ),
+              TextSpan(
+                text:
+                    '\nNotlar: ${contract.notes.isEmpty ? 'Yok' : contract.notes}',
+              ),
               if (reservedBy != null) TextSpan(text: '\nRezerve: $reservedBy'),
             ],
           ),
@@ -1324,7 +1328,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     crossAxisCount: 2,
                     crossAxisSpacing: 50,
                     mainAxisSpacing: 25,
-                    childAspectRatio: 3,
+                    childAspectRatio: 2.5,
                   ),
                   itemBuilder: (context, index) {
                     return _recordTile(records[index]);
@@ -1365,7 +1369,7 @@ class _HoverFillState extends State<_HoverFill> {
       onExit: (_) => setState(() => _hovering = false),
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: _hovering ? 1 : 0),
-        duration: const Duration(milliseconds: 500),
+        duration: const Duration(milliseconds: 800),
         curve: Curves.easeOutCubic,
         builder: (context, t, child) => Stack(
           children: [
