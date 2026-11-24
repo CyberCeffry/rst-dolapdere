@@ -500,8 +500,9 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Tam eşitleme. Zaten çalışıyorsa aynı işlemi bekler, ikinci kez başlatmaz.
   Future<void> syncNow() {
-    if (_firestore == null)
+    if (_firestore == null) {
       return Future<void>.value(); // Bulut yoksa bir şey yapma
+    }
     // ??= : devam eden eşitleme varsa onu döndür, yoksa yenisini başlat.
     return _fullSyncFuture ??= _exclusive(() => _track(_runFullSync))
         .whenComplete(() {

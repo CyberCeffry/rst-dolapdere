@@ -219,7 +219,9 @@ class _ReservationScreenState extends State<ReservationScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         isThreeLine: true,
         leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
           child: const Icon(Icons.bookmark_border, color: AppColors.primary),
         ),
         title: Text(
@@ -236,7 +238,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 if (contract == null)
-                  const TextSpan(text: 'Mevcut kiracı: yok (alan boş)\n')
+                  const TextSpan(text: 'Mevcut kiracı: Yok (Alan boş)\n')
                 else ...[
                   TextSpan(
                     text: 'Mevcut kiracı: ${tenant?.name ?? 'Bilinmiyor'}\n',
@@ -501,7 +503,9 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
         initial?.adSpaceId ?? (spaces.isEmpty ? null : spaces.first.value);
     _customerId =
         initial?.customerId ??
-        (widget.store.customers.isEmpty ? null : widget.store.customers.first.id);
+        (widget.store.customers.isEmpty
+            ? null
+            : widget.store.customers.first.id);
     _notes = TextEditingController(text: initial?.notes ?? '');
   }
 
@@ -577,8 +581,7 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                                 '${customer.company} ${customer.address} ${customer.email}',
                           ),
                       ],
-                      onChanged: (value) =>
-                          setState(() => _customerId = value),
+                      onChanged: (value) => setState(() => _customerId = value),
                     ),
                     const SizedBox(height: 14),
                     TextField(
