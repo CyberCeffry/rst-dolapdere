@@ -9,6 +9,7 @@ import '../../core/utils/contract_remaining_time.dart';
 import '../../core/utils/date_helper.dart';
 import '../../core/utils/turkish_text.dart';
 import '../../shared/widgets/searchable_picker.dart';
+import '../../shared/widgets/space_hover.dart';
 import '../contracts/services/contract_pdf_service.dart';
 import '../contracts/services/contract_file_service.dart';
 import 'services/ad_space_pdf_service.dart';
@@ -23,7 +24,7 @@ enum ContractListFilter { all, active, upcoming, notStarted, passive, expired }
 
 enum EndedContractFilter { all, finalized, expired }
 
-enum AdSpaceListFilter { all, available, occupied, expiring }
+enum AdSpaceListFilter { all, available, reserved, occupied, expiring }
 
 enum CustomerListFilter { all, withActive, withoutActive, noPhone }
 
@@ -150,7 +151,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
           : ContractRemainingTime.daysUntil(contract.endDate);
       return switch (_adSpaceFilter) {
         AdSpaceListFilter.all => true,
-        AdSpaceListFilter.available => contract == null,
+        AdSpaceListFilter.available =>
+          contract == null && store.reservationForAdSpace(space.id) == null,
+        AdSpaceListFilter.reserved =>
+          contract == null && store.reservationForAdSpace(space.id) != null,
         AdSpaceListFilter.occupied => contract != null,
         AdSpaceListFilter.expiring => days != null && days <= 10,
       };
@@ -588,6 +592,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           items: const [
             (AdSpaceListFilter.all, 'Tüm reklam alanları'),
             (AdSpaceListFilter.available, 'Boş'),
+            (AdSpaceListFilter.reserved, 'Rezerve'),
             (AdSpaceListFilter.occupied, 'Kirada'),
             (AdSpaceListFilter.expiring, 'Süresi yaklaşan (10 gün)'),
           ],
@@ -1024,8 +1029,13 @@ class _ManagementScreenState extends State<ManagementScreen> {
         );
       }
       icon = Icons.location_city_outlined;
-      status = contract == null ? 'Boş' : 'Kirada';
-      statusColor = contract == null ? AppColors.info : AppColors.contract;
+      final reservedOnly =
+          contract == null &&
+          widget.store.reservationForAdSpace(record.id) != null;
+      status = contract != null ? 'Kirada' : (reservedOnly ? 'Rezerve' : 'Boş');
+      statusColor = contract != null
+          ? AppColors.contract
+          : (reservedOnly ? AppColors.warning : AppColors.info);
       if (days != null && ContractRemainingTime.isUrgent(days)) {
         statusColor = AppColors.danger;
       }
@@ -1305,6 +1315,21 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     ),
                   ),
                 )
+              else if (widget.type == RecordType.adSpaces)
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: records.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 50,
+                    mainAxisSpacing: 25,
+                    childAspectRatio: 3,
+                  ),
+                  itemBuilder: (context, index) {
+                    return _recordTile(records[index]);
+                  },
+                )
               else
                 ...records.map(_recordTile),
             ],
@@ -1334,13 +1359,13 @@ class _HoverFillState extends State<_HoverFill> {
   @override
   Widget build(BuildContext context) {
     final color = widget.color;
-    if (color == null) return widget.child;
+    if (color == null) return SpaceHover(child: widget.child);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: _hovering ? 1 : 0),
-        duration: const Duration(milliseconds: 400),
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
         builder: (context, t, child) => Stack(
           children: [
@@ -1369,7 +1394,7 @@ class _HoverFillState extends State<_HoverFill> {
                             decoration: BoxDecoration(
                               gradient: RadialGradient(
                                 center: Alignment.center,
-                                radius: t * 0.75,
+                                radius: t * 1.5,
                                 colors: [
                                   color.withValues(alpha: 0.12),
                                   color.withValues(alpha: 0.12),
@@ -1613,18 +1638,75 @@ class _CustomerDetailsDialog extends StatelessWidget {
   }
 }
 
+/// Yeni müşteri formunu açar; kaydedilirse yeni müşterinin kimliğini döndürür.
+Future<String?> showCreateCustomerDialog(
+  BuildContext context,
+  AppStore store,
+) async {
+  final before = store.customers.map((item) => item.id).toSet();
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (context) =>
+        _RecordFormDialog(store: store, type: RecordType.customers),
+  );
+  if (saved != true) return null;
+  for (final item in store.customers) {
+    if (!before.contains(item.id)) return item.id;
+  }
+  return null;
+}
+
+/// Yeni reklam alanı formunu açar; kaydedilirse yeni alanın kimliğini döndürür.
+Future<String?> showCreateAdSpaceDialog(
+  BuildContext context,
+  AppStore store,
+) async {
+  final before = store.adSpaces.map((item) => item.id).toSet();
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (context) =>
+        _RecordFormDialog(store: store, type: RecordType.adSpaces),
+  );
+  if (saved != true) return null;
+  for (final item in store.adSpaces) {
+    if (!before.contains(item.id)) return item.id;
+  }
+  return null;
+}
+
+/// Rezervasyondan sözleşme başlatmak için sözleşme formunu müşteri ve alan
+/// seçili olarak açar. Kaydedilirse true döner.
+Future<bool?> showStartContractDialog(
+  BuildContext context,
+  AppStore store, {
+  required String customerId,
+  required String adSpaceId,
+}) => showDialog<bool>(
+  context: context,
+  builder: (context) => _RecordFormDialog(
+    store: store,
+    type: RecordType.contracts,
+    prefillCustomerId: customerId,
+    prefillAdSpaceId: adSpaceId,
+  ),
+);
+
 class _RecordFormDialog extends StatefulWidget {
   const _RecordFormDialog({
     required this.store,
     required this.type,
     this.initial,
     this.isRenewal = false,
+    this.prefillCustomerId,
+    this.prefillAdSpaceId,
   });
 
   final AppStore store;
   final RecordType type;
   final dynamic initial;
   final bool isRenewal;
+  final String? prefillCustomerId;
+  final String? prefillAdSpaceId;
 
   @override
   State<_RecordFormDialog> createState() => _RecordFormDialogState();
@@ -1707,10 +1789,10 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     );
     _customerId = initial is ContractModel
         ? initial.customerId
-        : widget.store.customers.firstOrNull?.id;
+        : (widget.prefillCustomerId ?? widget.store.customers.firstOrNull?.id);
     _adSpaceId = initial is ContractModel
         ? initial.adSpaceId
-        : widget.store.adSpaces.firstOrNull?.id;
+        : (widget.prefillAdSpaceId ?? widget.store.adSpaces.firstOrNull?.id);
     _startDate = ContractDateHelper.dateOnly(
       initial is ContractModel ? initial.startDate : DateTime.now(),
     );
@@ -2057,6 +2139,9 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                               '${item.company} ${item.address} ${item.email}',
                         ),
                     ],
+                    createLabel: '+ Yeni müşteri ekle',
+                    onCreate: () =>
+                        showCreateCustomerDialog(context, widget.store),
                     onChanged: (value) => setState(() => _customerId = value),
                   ),
                   const SizedBox(height: 14),
@@ -2074,6 +2159,9 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                           searchText: item.description,
                         ),
                     ],
+                    createLabel: '+ Yeni alan ekle',
+                    onCreate: () =>
+                        showCreateAdSpaceDialog(context, widget.store),
                     onChanged: (value) => setState(() => _adSpaceId = value),
                   ),
                   const SizedBox(height: 12),

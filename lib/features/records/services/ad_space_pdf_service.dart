@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../../core/services/app_store.dart';
 import '../../../core/utils/contract_remaining_time.dart';
 import '../../../models/ad_space_model.dart';
+import '../../../models/contract_model.dart';
 
 class AdSpacePdfService {
   /// [adSpaces] ekranda o an görünen (filtrelenmiş ve sıralanmış) listedir.
@@ -113,6 +114,7 @@ class AdSpacePdfService {
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
 
             columnWidths: const {
+              6: pw.FlexColumnWidth(2.4),
               0: pw.FlexColumnWidth(2),
               1: pw.FlexColumnWidth(2),
               2: pw.FlexColumnWidth(1.3),
@@ -131,6 +133,7 @@ class AdSpacePdfService {
                   'Kalan süre',
                   'Durum',
                   'Rezerve',
+                  'Açıklama',
                 ],
                 boldFont,
                 header: true,
@@ -162,8 +165,13 @@ class AdSpacePdfService {
                         : ContractRemainingTime.formatDetailed(
                             contract.endDate,
                           ),
-                    isEmpty ? 'Boş' : 'Kirada',
+                    isEmpty
+                        ? (store.reservedByNameFor(space.id) != null
+                              ? 'Rezerve'
+                              : 'Boş')
+                        : 'Kirada',
                     store.reservedByNameFor(space.id) ?? '-',
+                    _notesFor(store, space, contract),
                   ],
                   font,
 
@@ -198,6 +206,30 @@ class AdSpacePdfService {
     );
 
     return document.save();
+  }
+
+  /// Duruma özel not: kirada ise sözleşme notu, rezerve ise rezervasyon notu;
+  /// ikisi de yoksa reklam alanı açıklaması.
+  static String _notesFor(
+    AppStore store,
+    AdSpaceModel space,
+    ContractModel? contract,
+  ) {
+    final parts = <String>[];
+    final contractNote = contract?.notes.trim() ?? '';
+    if (contractNote.isNotEmpty) parts.add(contractNote);
+    final reservationNote =
+        store.reservationForAdSpace(space.id)?.notes.trim() ?? '';
+    if (reservationNote.isNotEmpty) {
+      parts.add(
+        contract == null ? reservationNote : 'Rezervasyon: $reservationNote',
+      );
+    }
+    if (parts.isEmpty) {
+      final description = space.description.trim();
+      return description.isEmpty ? '-' : description;
+    }
+    return parts.join('\n');
   }
 
   static pw.TableRow _row(

@@ -98,6 +98,7 @@ class ReservationPdfService {
               2: pw.FlexColumnWidth(2),
               3: pw.FlexColumnWidth(1.5),
               4: pw.FlexColumnWidth(1.5),
+              5: pw.FlexColumnWidth(2.4),
             },
             children: [
               _row(
@@ -107,6 +108,7 @@ class ReservationPdfService {
                   'Mevcut kiracı',
                   'Kalan süre',
                   'Verilen tutar',
+                  'Açıklama',
                 ],
                 boldFont,
                 header: true,
@@ -137,6 +139,9 @@ class ReservationPdfService {
                     contract == null
                         ? '-'
                         : currencyFormat.format(contract.monthlyPrice),
+                    reservation.notes.trim().isEmpty
+                        ? '-'
+                        : reservation.notes.trim(),
                   ],
                   font,
                   empty: isEmpty,

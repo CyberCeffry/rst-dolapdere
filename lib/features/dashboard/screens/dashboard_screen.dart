@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/services/app_store.dart';
@@ -86,7 +88,7 @@ class DashboardScreen extends StatelessWidget {
                       _SummaryCard(
                         title: 'Boş Reklam Alanları',
                         value:
-                            '${store.adSpaces.where((space) => space.isAvailable).length}',
+                            '${store.adSpaces.where((space) => space.isAvailable && store.reservationForAdSpace(space.id) == null).length}',
                         icon: Icons.event_available_outlined,
                         color: AppColors.warning,
                         onTap: () => onNavigate?.call(
@@ -227,7 +229,9 @@ class _SummaryCardState extends State<_SummaryCard> {
   Widget build(BuildContext context) {
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: InkWell(
         onTap: widget.onTap,
         onHover: (value) => setState(() => _hovering = value),
         hoverColor: Colors.transparent, // ani renk değişimini kapat
@@ -235,7 +239,7 @@ class _SummaryCardState extends State<_SummaryCard> {
         splashColor: widget.color.withValues(alpha: 0.12),
         child: TweenAnimationBuilder<double>(
           tween: Tween(begin: 0, end: _hovering ? 1 : 0),
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 800),
           curve: Curves.easeOutCubic,
           builder: (context, t, child) {
             return DecoratedBox(
@@ -256,6 +260,7 @@ class _SummaryCardState extends State<_SummaryCard> {
             );
           },
           child: _buildContent(context),
+        ),
         ),
       ),
     );

@@ -31,6 +31,8 @@ class SearchablePicker<T> extends StatefulWidget {
     this.errorText,
     this.searchHint = 'Ara...',
     this.emptyText = 'Sonuç bulunamadı',
+    this.createLabel,
+    this.onCreate,
   });
 
   final String label;
@@ -40,6 +42,12 @@ class SearchablePicker<T> extends StatefulWidget {
   final String? errorText;
   final String searchHint;
   final String emptyText;
+
+  /// Sonuç bulunamayınca "+ Yeni ..." düğmesinin yazısı (onCreate ile birlikte).
+  final String? createLabel;
+
+  /// Yeni kayıt oluşturur ve seçilecek değeri döndürür (vazgeçilirse null).
+  final Future<T?> Function()? onCreate;
 
   @override
   State<SearchablePicker<T>> createState() => _SearchablePickerState<T>();
@@ -101,6 +109,14 @@ class _SearchablePickerState<T> extends State<SearchablePicker<T>> {
     if (!_isOpen) return;
     _removeEntry();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _create() async {
+    final onCreate = widget.onCreate;
+    if (onCreate == null) return;
+    _close();
+    final created = await onCreate();
+    if (created != null && mounted) widget.onChanged(created);
   }
 
   void _select(PickerItem<T> item) {
@@ -166,11 +182,30 @@ class _SearchablePickerState<T> extends State<SearchablePicker<T>> {
                           child: items.isEmpty
                               ? Padding(
                                   padding: const EdgeInsets.all(16),
-                                  child: Text(
-                                    widget.emptyText,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        widget.emptyText,
+                                        style: TextStyle(
+                                          color: theme
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                      if (widget.onCreate != null) ...[
+                                        const SizedBox(height: 10),
+                                        FilledButton.tonalIcon(
+                                          onPressed: _create,
+                                          icon: const Icon(Icons.add),
+                                          label: Text(
+                                            widget.createLabel ?? 'Yeni ekle',
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 )
                               : ListView.builder(

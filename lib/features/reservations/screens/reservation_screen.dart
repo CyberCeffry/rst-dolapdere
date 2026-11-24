@@ -7,6 +7,8 @@ import '../../../core/utils/contract_remaining_time.dart';
 import '../../../core/utils/turkish_text.dart';
 import '../../../models/reservation_model.dart';
 import '../../../shared/widgets/searchable_picker.dart';
+import '../../../shared/widgets/space_hover.dart';
+import '../../records/management_screens.dart';
 import '../services/reservation_pdf_service.dart';
 
 enum _ReservationFilter { all, occupied, empty }
@@ -35,6 +37,8 @@ class _ReservationScreenState extends State<ReservationScreen> {
   String _query = '';
   _ReservationFilter _filter = _ReservationFilter.all;
   _ReservationSort _sort = _ReservationSort.spaceAsc;
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
 
   @override
   void dispose() {
@@ -171,6 +175,121 @@ class _ReservationScreenState extends State<ReservationScreen> {
     _toast('Rezervasyon silindi.');
   }
 
+  List<ReservationModel> _selected(List<ReservationModel> records) =>
+      records.where((item) => _selectedIds.contains(item.id)).toList();
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(ReservationModel reservation) {
+    setState(() {
+      if (!_selectedIds.add(reservation.id)) {
+        _selectedIds.remove(reservation.id);
+      }
+    });
+  }
+
+  void _selectAll(List<ReservationModel> visible) {
+    final ids = visible.map((item) => item.id).toSet();
+    setState(() {
+      if (_selectedIds.containsAll(ids)) {
+        _selectedIds.removeAll(ids);
+      } else {
+        _selectedIds.addAll(ids);
+      }
+    });
+  }
+
+  Future<void> _bulkDelete(List<ReservationModel> selected) async {
+    if (selected.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Seçilenleri sil'),
+        content: Text('${selected.length} rezervasyon silinecek. Devam edilsin mi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final reservation in selected) {
+      await widget.store.deleteReservation(reservation.id);
+    }
+    if (!mounted) return;
+    setState(() => _selectedIds.removeAll(selected.map((item) => item.id)));
+    _toast('${selected.length} rezervasyon silindi.');
+  }
+
+  /// Rezervasyondan sözleşme başlatır.
+  /// true: başlatıldı, false: alan kirada olduğu için atlandı, null: vazgeçildi.
+  Future<bool?> _startContract(
+    ReservationModel reservation, {
+    bool quiet = false,
+  }) async {
+    final store = widget.store;
+    final space = store.adSpaceFor(reservation.adSpaceId);
+    final current = store.activeContractForAdSpace(reservation.adSpaceId);
+    if (current != null) {
+      if (!quiet) {
+        final tenant = store.customerFor(current.customerId)?.name ?? 'Kiracı';
+        _toast(
+          '${space?.name ?? 'Alan'} şu an kirada ($tenant, '
+          '${ContractRemainingTime.formatDetailed(current.endDate)} kaldı). '
+          'Alan boşalınca sözleşme başlatabilirsiniz.',
+        );
+      }
+      return false;
+    }
+    final before = store.contracts.length;
+    final saved = await showStartContractDialog(
+      context,
+      store,
+      customerId: reservation.customerId,
+      adSpaceId: reservation.adSpaceId,
+    );
+    if (saved != true) return null;
+    if (store.contracts.length > before) {
+      await store.deleteReservation(reservation.id);
+      if (!quiet) _toast('Sözleşme başlatıldı, rezervasyon kaldırıldı.');
+    }
+    return true;
+  }
+
+  Future<void> _bulkStart(List<ReservationModel> selected) async {
+    if (selected.isEmpty) return;
+    var started = 0;
+    var skipped = 0;
+    for (final reservation in selected) {
+      if (!mounted) return;
+      final result = await _startContract(reservation, quiet: true);
+      if (result == null) break; // Vazgeçildi: kalanları işleme
+      if (result) {
+        started++;
+        _selectedIds.remove(reservation.id);
+      } else {
+        skipped++;
+      }
+    }
+    if (!mounted) return;
+    setState(() {});
+    _toast(
+      '$started sözleşme başlatıldı'
+      '${skipped > 0 ? ', $skipped alan kirada olduğu için atlandı' : ''}.',
+    );
+  }
+
   Widget _dropdown<T>({
     required String label,
     required T value,
@@ -214,16 +333,31 @@ class _ReservationScreenState extends State<ReservationScreen> {
     final currency = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
     final dateFormat = DateFormat('dd.MM.yyyy');
 
+    final narrow = MediaQuery.sizeOf(context).width < 760;
+    final canStart = contract == null;
+    final startColor = canStart
+        ? AppColors.success
+        : Theme.of(context).colorScheme.onSurfaceVariant;
     return Card(
-      child: ListTile(
+      child: SpaceHover(
+        child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         isThreeLine: true,
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.bookmark_border, color: AppColors.primary),
-        ),
+        onTap: _selectionMode ? () => _toggleSelected(reservation) : null,
+        leading: _selectionMode
+            ? Checkbox(
+                value: _selectedIds.contains(reservation.id),
+                onChanged: (_) => _toggleSelected(reservation),
+              )
+            : CircleAvatar(
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest,
+                child: const Icon(
+                  Icons.bookmark_border,
+                  color: AppColors.primary,
+                ),
+              ),
         title: Text(
           space?.name ?? 'Silinmiş reklam alanı',
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -238,7 +372,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 if (contract == null)
-                  const TextSpan(text: 'Mevcut kiracı: Yok (Alan boş)\n')
+                  const TextSpan(text: 'Mevcut kiracı: yok (alan boş)\n')
                 else ...[
                   TextSpan(
                     text: 'Mevcut kiracı: ${tenant?.name ?? 'Bilinmiyor'}\n',
@@ -269,16 +403,37 @@ class _ReservationScreenState extends State<ReservationScreen> {
             ),
           ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'edit') _openForm(reservation);
-            if (value == 'delete') _delete(reservation);
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-            PopupMenuItem(value: 'delete', child: Text('Sil')),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (narrow)
+              IconButton(
+                tooltip: 'Sözleşme başlat',
+                onPressed: () => _startContract(reservation),
+                icon: Icon(Icons.play_circle_outline, color: startColor),
+              )
+            else
+              TextButton.icon(
+                onPressed: () => _startContract(reservation),
+                icon: Icon(Icons.play_circle_outline, color: startColor),
+                label: Text(
+                  'Sözleşme başlat',
+                  style: TextStyle(color: startColor),
+                ),
+              ),
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'edit') _openForm(reservation);
+                if (value == 'delete') _delete(reservation);
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'edit', child: Text('Düzenle')),
+                PopupMenuItem(value: 'delete', child: Text('Sil')),
+              ],
+            ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -375,6 +530,13 @@ class _ReservationScreenState extends State<ReservationScreen> {
                     ],
                     onChanged: (value) => setState(() => _sort = value),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: _toggleSelectionMode,
+                    icon: Icon(_selectionMode ? Icons.close : Icons.checklist),
+                    label: Text(
+                      _selectionMode ? 'Seçimi kapat' : 'Çoklu seçim',
+                    ),
+                  ),
                   if (_filter != _ReservationFilter.all ||
                       _query.trim().isNotEmpty)
                     TextButton.icon(
@@ -390,6 +552,54 @@ class _ReservationScreenState extends State<ReservationScreen> {
                     ),
                 ],
               ),
+              if (_selectionMode) ...[
+                const SizedBox(height: 10),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('${_selected(records).length} seçili'),
+                        TextButton.icon(
+                          onPressed: records.isEmpty
+                              ? null
+                              : () => _selectAll(records),
+                          icon: const Icon(Icons.select_all),
+                          label: Text(
+                            records.isNotEmpty &&
+                                    _selected(records).length == records.length
+                                ? 'Seçimi kaldır'
+                                : 'Tümünü seç',
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: _selected(records).isEmpty
+                              ? null
+                              : () => _bulkStart(_selected(records)),
+                          icon: const Icon(Icons.play_circle_outline),
+                          label: const Text('Sözleşme başlat'),
+                        ),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.danger,
+                          ),
+                          onPressed: _selected(records).isEmpty
+                              ? null
+                              : () => _bulkDelete(_selected(records)),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Sil'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: _searchController,
@@ -503,9 +713,7 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
         initial?.adSpaceId ?? (spaces.isEmpty ? null : spaces.first.value);
     _customerId =
         initial?.customerId ??
-        (widget.store.customers.isEmpty
-            ? null
-            : widget.store.customers.first.id);
+        (widget.store.customers.isEmpty ? null : widget.store.customers.first.id);
     _notes = TextEditingController(text: initial?.notes ?? '');
   }
 
@@ -563,6 +771,9 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                       label: 'Reklam alanı',
                       value: _adSpaceId,
                       items: spaces,
+                      createLabel: '+ Yeni alan ekle',
+                      onCreate: () =>
+                          showCreateAdSpaceDialog(context, widget.store),
                       onChanged: (value) => setState(() => _adSpaceId = value),
                     ),
                     const SizedBox(height: 14),
@@ -581,7 +792,11 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                                 '${customer.company} ${customer.address} ${customer.email}',
                           ),
                       ],
-                      onChanged: (value) => setState(() => _customerId = value),
+                      createLabel: '+ Yeni müşteri ekle',
+                      onCreate: () =>
+                          showCreateCustomerDialog(context, widget.store),
+                      onChanged: (value) =>
+                          setState(() => _customerId = value),
                     ),
                     const SizedBox(height: 14),
                     TextField(

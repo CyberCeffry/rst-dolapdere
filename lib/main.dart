@@ -8,7 +8,9 @@ import 'package:flutter_localizations/flutter_localizations.dart'; // Türkçe t
 
 import 'core/services/app_store.dart'; // Uygulamanın tüm verisini tutan merkezi sınıf
 import 'core/services/background_sync.dart'; // Android arka plan eşitleme planlayıcısı
-import 'core/theme/app_theme.dart'; // Açık/koyu tema tanımları
+// ignore: unused_import
+import 'core/theme/app_theme.dart';
+import 'core/theme/space_theme.dart'; // Açık/koyu tema tanımları
 import 'firebase_options.dart'; // Firebase proje ayarları (platform bazlı)
 import 'shared/layouts/main_layout.dart'; // Ana iskelet: menü + sayfa alanı
 
@@ -96,7 +98,9 @@ class RSTDolapdereApp extends StatelessWidget {
       supportedLocales: const [Locale('tr', 'TR')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
 
-      theme: AppTheme.darkTheme,
+      theme: SpaceTheme.dark,
+      builder: (context, child) =>
+          SpaceBackground(child: child ?? const SizedBox.shrink()),
       themeMode: ThemeMode.dark,
 
       home: MainLayout(key: mainLayoutKey, store: store),

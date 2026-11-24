@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_helper.dart';
 import '../../../models/contract_model.dart';
 import '../../../models/customer_model.dart';
+import '../../../shared/widgets/space_hover.dart';
 import '../../records/management_screens.dart';
 
 class NotificationScreen extends StatelessWidget {
@@ -187,7 +188,8 @@ class _ReminderCard extends StatelessWidget {
         ? 180.0
         : 220.0;
     return Card(
-      child: Padding(
+      child: SpaceHover(
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,6 +289,7 @@ class _ReminderCard extends StatelessWidget {
               ),
             ],
           ],
+        ),
         ),
       ),
     );
