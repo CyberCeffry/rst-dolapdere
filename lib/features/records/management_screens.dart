@@ -9,7 +9,9 @@ import '../../core/utils/contract_remaining_time.dart';
 import '../../core/utils/date_helper.dart';
 import '../../core/utils/turkish_text.dart';
 import '../../shared/widgets/searchable_picker.dart';
+import '../../shared/widgets/space_form.dart';
 import '../../shared/widgets/space_hover.dart';
+import '../../shared/widgets/space_menu.dart';
 import '../contracts/services/contract_pdf_service.dart';
 import '../contracts/services/contract_file_service.dart';
 import 'services/ad_space_pdf_service.dart';
@@ -980,6 +982,68 @@ class _ManagementScreenState extends State<ManagementScreen> {
     return widget.store.adSpaceFor(contract.adSpaceId)?.name ?? 'Sözleşme';
   }
 
+  List<SpaceMenuItem<String>> _menuItems(dynamic record) {
+    if (record is ContractModel) {
+      final ended =
+          record.isFinalized || DateHelper.daysUntil(record.endDate) < 0;
+      return [
+        const SpaceMenuItem(
+          value: 'details',
+          label: 'Detayları görüntüle',
+          icon: Icons.visibility_outlined,
+        ),
+        if (record.hasPdf)
+          const SpaceMenuItem(
+            value: 'pdf',
+            label: 'Sözleşme PDF\'ini görüntüle',
+            icon: Icons.picture_as_pdf_outlined,
+          ),
+        if (!ended)
+          const SpaceMenuItem(
+            value: 'edit',
+            label: 'Düzenle',
+            icon: Icons.edit_outlined,
+          ),
+        if (!record.isFinalized)
+          const SpaceMenuItem(
+            value: 'end',
+            label: 'Bitti olarak işaretle',
+            icon: Icons.event_available_outlined,
+          ),
+        const SpaceMenuItem(
+          value: 'renew',
+          label: 'Sözleşmeyi uzat',
+          icon: Icons.autorenew,
+        ),
+        const SpaceMenuItem(
+          value: 'delete',
+          label: 'Sil',
+          icon: Icons.delete_outline,
+          destructive: true,
+        ),
+      ];
+    }
+    return [
+      if (record is CustomerModel)
+        const SpaceMenuItem(
+          value: 'details',
+          label: 'Detayları görüntüle',
+          icon: Icons.visibility_outlined,
+        ),
+      const SpaceMenuItem(
+        value: 'edit',
+        label: 'Düzenle',
+        icon: Icons.edit_outlined,
+      ),
+      const SpaceMenuItem(
+        value: 'delete',
+        label: 'Sil',
+        icon: Icons.delete_outline,
+        destructive: true,
+      ),
+    ];
+  }
+
   Widget _recordTile(dynamic record) {
     String title;
     String subtitle;
@@ -1133,7 +1197,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     ),
                   ),
                 ),
-                PopupMenuButton<String>(
+                SpaceMenuButton<String>(
                   tooltip: 'Kayıt işlemleri',
                   onSelected: (value) {
                     if (record is ContractModel) {
@@ -1161,54 +1225,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                       _delete(record);
                     }
                   },
-                  itemBuilder: (context) {
-                    if (record is ContractModel) {
-                      final ended =
-                          record.isFinalized ||
-                          DateHelper.daysUntil(record.endDate) < 0;
-                      return [
-                        const PopupMenuItem(
-                          value: 'details',
-                          child: Text('Detayları görüntüle'),
-                        ),
-                        if (record.hasPdf)
-                          const PopupMenuItem(
-                            value: 'pdf',
-                            child: Text('Sözleşme PDF\'ini görüntüle'),
-                          ),
-                        if (!ended)
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Text('Düzenle'),
-                          ),
-                        if (!record.isFinalized)
-                          const PopupMenuItem(
-                            value: 'end',
-                            child: Text('Bitti olarak işaretle'),
-                          ),
-                        const PopupMenuItem(
-                          value: 'renew',
-                          child: Text('Sözleşmeyi uzat'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Sil'),
-                        ),
-                      ];
-                    }
-                    return [
-                      if (record is CustomerModel)
-                        const PopupMenuItem(
-                          value: 'details',
-                          child: Text('Detayları görüntüle'),
-                        ),
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Düzenle'),
-                      ),
-                      const PopupMenuItem(value: 'delete', child: Text('Sil')),
-                    ];
-                  },
+                  items: _menuItems(record),
                 ),
               ],
             ),
@@ -1225,117 +1242,145 @@ class _ManagementScreenState extends State<ManagementScreen> {
       builder: (context, _) {
         final records = _records;
         final contracts = widget.type == RecordType.contracts;
-        return SingleChildScrollView(
+        return Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.showEndedContracts ? 'Biten Sözleşmeler' : _title,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  if (!widget.showEndedContracts)
-                    FilledButton.icon(
-                      onPressed: () => _edit(null),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Yeni Ekle'),
-                    ),
-                  if (contracts || widget.type == RecordType.adSpaces)
-                    IconButton(
-                      tooltip: contracts
-                          ? 'Görünen sözleşmeleri PDF dışa aktar'
-                          : 'Görünen reklam alanlarını PDF dışa aktar',
-                      onPressed: () => contracts
-                          ? _exportContracts(records)
-                          : _exportAdSpaces(records),
-                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                    ),
-                ],
-              ),
-              if (contracts) ..._contractControls(records),
-              if (widget.type == RecordType.adSpaces) ..._adSpaceControls(),
-              if (widget.type == RecordType.customers) ..._customerControls(),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _searchController,
-                onChanged: (value) => setState(() => _query = value),
-                decoration: InputDecoration(
-                  hintText: 'Ara',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Aramayı temizle',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _query = '');
-                          },
-                          icon: const Icon(Icons.close),
-                        ),
+              // Sabit ust kisim (baslik, filtreler, arama, kayit sayisi)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.55,
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (records.isNotEmpty) _summaryLine(records),
-              if (records.isEmpty)
-                Card(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(
-                            widget.type == RecordType.adSpaces
-                                ? Icons.location_city_outlined
-                                : widget.type == RecordType.customers
-                                ? Icons.people_outline
-                                : Icons.description_outlined,
-                            size: 40,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _query.isEmpty
-                                ? 'Henüz kayıt bulunmuyor.'
-                                : 'Aramanızla eşleşen kayıt yok.',
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                          Expanded(
+                            child: Text(
+                              widget.showEndedContracts
+                                  ? 'Biten Sözleşmeler'
+                                  : _title,
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
                           ),
+                          if (!widget.showEndedContracts)
+                            FilledButton.icon(
+                              onPressed: () => _edit(null),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Yeni Ekle'),
+                            ),
+                          if (contracts || widget.type == RecordType.adSpaces)
+                            IconButton(
+                              tooltip: contracts
+                                  ? 'Görünen sözleşmeleri PDF dışa aktar'
+                                  : 'Görünen reklam alanlarını PDF dışa aktar',
+                              onPressed: () => contracts
+                                  ? _exportContracts(records)
+                                  : _exportAdSpaces(records),
+                              icon: const Icon(Icons.picture_as_pdf_outlined),
+                            ),
                         ],
                       ),
-                    ),
+                      if (contracts) ..._contractControls(records),
+                      if (widget.type == RecordType.adSpaces)
+                        ..._adSpaceControls(),
+                      if (widget.type == RecordType.customers)
+                        ..._customerControls(),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (value) => setState(() => _query = value),
+                        decoration: InputDecoration(
+                          hintText: 'Ara',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _query.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Aramayı temizle',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _query = '');
+                                  },
+                                  icon: const Icon(Icons.close),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (records.isNotEmpty) _summaryLine(records),
+                    ],
                   ),
-                )
-              else if (widget.type == RecordType.adSpaces)
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: records.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 50,
-                    mainAxisSpacing: 25,
-                    childAspectRatio: 2.5,
+                ),
+              ),
+              // Yalnizca liste kismi kayar
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (records.isEmpty)
+                        Card(
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    widget.type == RecordType.adSpaces
+                                        ? Icons.location_city_outlined
+                                        : widget.type == RecordType.customers
+                                        ? Icons.people_outline
+                                        : Icons.description_outlined,
+                                    size: 40,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _query.isEmpty
+                                        ? 'Henüz kayıt bulunmuyor.'
+                                        : 'Aramanızla eşleşen kayıt yok.',
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (widget.type == RecordType.adSpaces)
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: records.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 50,
+                                mainAxisSpacing: 25,
+                                childAspectRatio: 2.5,
+                              ),
+                          itemBuilder: (context, index) {
+                            return _recordTile(records[index]);
+                          },
+                        )
+                      else
+                        ...records.map(_recordTile),
+                    ],
                   ),
-                  itemBuilder: (context, index) {
-                    return _recordTile(records[index]);
-                  },
-                )
-              else
-                ...records.map(_recordTile),
+                ),
+              ),
             ],
           ),
         );
@@ -1841,6 +1886,34 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     super.dispose();
   }
 
+  IconData get _headerIcon => switch (widget.type) {
+    RecordType.adSpaces => Icons.location_city_outlined,
+    RecordType.customers => Icons.business_outlined,
+    RecordType.contracts =>
+      widget.isRenewal ? Icons.autorenew : Icons.description_outlined,
+  };
+
+  String get _headerTitle {
+    final editing = widget.initial != null && !widget.isRenewal;
+    if (widget.isRenewal) return 'Sözleşmeyi uzat';
+    return switch (widget.type) {
+      RecordType.adSpaces =>
+        editing ? 'Reklam alanını düzenle' : 'Yeni reklam alanı',
+      RecordType.customers => editing ? 'Müşteriyi düzenle' : 'Yeni müşteri',
+      RecordType.contracts =>
+        editing ? 'Sözleşmeyi düzenle' : 'Yeni sözleşme',
+    };
+  }
+
+  String get _headerSubtitle => switch (widget.type) {
+    RecordType.adSpaces => 'Alan adı, konum ve açıklama bilgileri',
+    RecordType.customers => 'Firma, adres ve iletişim bilgileri',
+    RecordType.contracts =>
+      widget.isRenewal
+          ? 'Yeni süre ve tutarı belirleyin'
+          : 'Taraflar, süre ve tutar bilgileri',
+  };
+
   String get _title => widget.isRenewal
       ? 'Sözleşmeyi uzat'
       : widget.initial == null
@@ -2043,6 +2116,9 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     );
   }
 
+  Widget _sectionTitle(String text, IconData icon) =>
+      SpaceSectionTitle(text: text, icon: icon);
+
   double _parsePrice() =>
       double.tryParse(_price.text.trim().replaceAll(',', '.')) ?? 0;
 
@@ -2093,7 +2169,15 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
   Widget build(BuildContext context) {
     final isContract = widget.type == RecordType.contracts;
     return AlertDialog(
-      title: Text(_title),
+      clipBehavior: Clip.antiAlias,
+      titlePadding: EdgeInsets.zero,
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+      title: SpaceDialogHeader(
+        icon: _headerIcon,
+        title: _headerTitle,
+        subtitle: _headerSubtitle,
+      ),
       content: SizedBox(
         width: 480,
         child: Form(
@@ -2103,8 +2187,10 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (widget.type == RecordType.adSpaces) ...[
+                  _sectionTitle('Alan bilgileri', Icons.location_city_outlined),
                   _textField('Alan adı', _name, required: true),
                   _textField('Konum', _location),
+                  _sectionTitle('Kira ve açıklama', Icons.payments_outlined),
                   _textField(
                     'Aylık kira (₺)',
                     _price,
@@ -2115,8 +2201,10 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   _textField('Açıklama', _description, maxLines: 3),
                 ],
                 if (widget.type == RecordType.customers) ...[
+                  _sectionTitle('Firma bilgileri', Icons.business_outlined),
                   _textField('Firma adı', _company, required: true),
                   _textField('Adres', _address, maxLines: 2),
+                  _sectionTitle('İletişim', Icons.contact_phone_outlined),
                   _textField(
                     'Telefon',
                     _phone,
@@ -2130,6 +2218,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   _textField('Notlar', _notes, maxLines: 3),
                 ],
                 if (isContract) ...[
+                  _sectionTitle('Taraflar', Icons.handshake_outlined),
                   SearchablePicker<String>(
                     label: 'Müşteri',
                     value: _customerId,
@@ -2168,7 +2257,8 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                         showCreateAdSpaceDialog(context, widget.store),
                     onChanged: (value) => setState(() => _adSpaceId = value),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
+                  _sectionTitle('Süre ve tarihler', Icons.event_note_outlined),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -2229,6 +2319,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                     readOnly: widget.isRenewal,
                   ),
                   _dateField('Bitiş tarihi', _endDate, false),
+                  _sectionTitle('Tutar ve notlar', Icons.payments_outlined),
                   _textField(
                     'Toplam tutar (₺)',
                     _price,
@@ -2238,13 +2329,13 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                     ),
                   ),
                   _textField('Notlar', _notes, maxLines: 3),
-                  if (ContractFileService.isSupported) _pdfSection(),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Sözleşme aktif'),
-                    value: _active,
-                    onChanged: (value) => setState(() => _active = value),
-                  ),
+                  // if (ContractFileService.isSupported) _pdfSection(),
+                  // SwitchListTile(
+                  //   contentPadding: EdgeInsets.zero,
+                  //   title: const Text('Sözleşme aktif'),
+                  //   value: _active,
+                  //   onChanged: (value) => setState(() => _active = value),
+                  // ),
                 ],
                 if (_error != null)
                   Align(
@@ -2264,7 +2355,11 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Vazgeç'),
         ),
-        FilledButton(onPressed: _save, child: const Text('Kaydet')),
+        FilledButton.icon(
+          onPressed: _save,
+          icon: const Icon(Icons.check_rounded),
+          label: const Text('Kaydet'),
+        ),
       ],
     );
   }

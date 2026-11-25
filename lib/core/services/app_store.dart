@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // Cihazda küçük
 import '../../models/ad_space_model.dart'; // Reklam alanı modeli
 import '../../models/contract_history_entry.dart'; // Sözleşme geçmişi kaydı
 import '../../models/contract_model.dart'; // Sözleşme modeli
+import '../../models/ad_price_model.dart';
 import '../../models/reservation_model.dart';
 import '../../models/customer_model.dart'; // Müşteri modeli
 import '../utils/date_helper.dart'; // Tarih yardımcıları
@@ -50,6 +51,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
     _contracts = _readList('contracts', ContractModel.fromJson);
     _reservations = _readList('reservations', ReservationModel.fromJson);
+    _adPrices = _readList('adPrices', AdPriceModel.fromJson);
 
     // Hatırlatma ayarlarını yükle (yoksa varsayılan değerler).
     phoneRemindersEnabled =
@@ -88,6 +90,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   late List<AdSpaceModel> _adSpaces;
   late List<ContractModel> _contracts;
   late List<ReservationModel> _reservations;
+  late List<AdPriceModel> _adPrices;
 
   Timer? _syncTimer; // Periyodik eşitleme zamanlayıcısı
   Future<void> _syncLock =
@@ -151,6 +154,20 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
   List<AdSpaceModel> get adSpaces => List.unmodifiable(_adSpaces);
   List<ContractModel> get contracts => List.unmodifiable(_contracts);
   List<ReservationModel> get reservations => List.unmodifiable(_reservations);
+  List<AdPriceModel> get adPrices => List.unmodifiable(_adPrices);
+
+  /// Reklam alanının fiyat listesi kaydı (yoksa null).
+  AdPriceModel? adPriceFor(String adSpaceId) {
+    for (final price in _adPrices) {
+      if (price.adSpaceId == adSpaceId) return price;
+    }
+    return null;
+  }
+
+  /// Aylık / 3 aylık / 6 aylık fiyatlarından biri bile girilmemiş reklam alanları.
+  List<AdSpaceModel> get adSpacesMissingPrice => _adSpaces
+      .where((space) => !(adPriceFor(space.id)?.isComplete ?? false))
+      .toList();
 
   /// Reklam alanı için bekleyen rezervasyon (yoksa null).
   ReservationModel? reservationForAdSpace(String adSpaceId) {
@@ -309,6 +326,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     'adSpaces',
     'contracts',
     'reservations',
+    'adPrices',
   ]; // Eşitlenen koleksiyonlar
   static const Duration _networkTimeout = Duration(
     seconds: 20,
@@ -435,12 +453,14 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
           _differs('customers', _customers) ||
           _differs('adSpaces', _adSpaces) ||
           _differs('contracts', _contracts) ||
-          _differs('reservations', _reservations);
+          _differs('reservations', _reservations) ||
+          _differs('adPrices', _adPrices);
       if (changed) {
         _customers = _readList('customers', CustomerModel.fromJson);
         _adSpaces = _readList('adSpaces', AdSpaceModel.fromJson);
         _contracts = _readList('contracts', ContractModel.fromJson);
         _reservations = _readList('reservations', ReservationModel.fromJson);
+        _adPrices = _readList('adPrices', AdPriceModel.fromJson);
         _publishSyncStatus();
         notifyListeners(); // Ekranları yenile
       }
@@ -622,6 +642,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     'customers' => _customers,
     'adSpaces' => _adSpaces,
     'reservations' => _reservations,
+    'adPrices' => _adPrices,
     _ => _contracts,
   };
 
@@ -634,6 +655,8 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
         _adSpaces = items.cast<AdSpaceModel>().toList();
       case 'reservations':
         _reservations = items.cast<ReservationModel>().toList();
+      case 'adPrices':
+        _adPrices = items.cast<AdPriceModel>().toList();
       default:
         _contracts = items.cast<ContractModel>().toList();
     }
@@ -644,6 +667,7 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     'customers' => CustomerModel.fromJson(json),
     'adSpaces' => AdSpaceModel.fromJson(json),
     'reservations' => ReservationModel.fromJson(json),
+    'adPrices' => AdPriceModel.fromJson(json),
     _ => ContractModel.fromJson(json),
   };
 
@@ -1000,6 +1024,24 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     await _saveList('adSpaces', _adSpaces);
 
     unawaited(_deleteRemote('adSpaces', id));
+
+    notifyListeners();
+  }
+
+  // Reklam fiyatı kaydet. Yalnızca "Reklam Fiyatları" ekranı çağırır; sözleşme,
+  // kiracı veya reklam alanı işlemleri bu kayıtlara hiçbir zaman dokunmaz.
+
+  // Reklam fiyatı kaydet. Tüm fiyat alanları isteğe bağlıdır.
+  Future<void> saveAdPrice(AdPriceModel price) async {
+    if (!_adSpaces.any((space) => space.id == price.adSpaceId)) {
+      throw StateError('Reklam alanı bulunamadı.');
+    }
+
+    // Fiyatların dolu olma zorunluluğu kaldırıldı.
+    // 0 değerleri de kaydedilir; eski fiyatların üzerine yazılır.
+    _adPrices = _upsert(_adPrices, price, (item) => item.id);
+
+    await _persistCollection('adPrices', [price]);
 
     notifyListeners();
   }

@@ -39,6 +39,10 @@ class AppSidebar extends StatelessWidget {
       icon: Icon(Icons.bookmark_border),
       label: 'Rezervasyonlar',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.sell_outlined),
+      label: 'Fiyatlar',
+    ),
   ];
 
   static const _labels = [
@@ -50,6 +54,7 @@ class AppSidebar extends StatelessWidget {
     'Bildirimler',
     'Ayarlar',
     'Rezervasyonlar',
+    'Reklam Fiyatları',
   ];
 
   @override

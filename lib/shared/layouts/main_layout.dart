@@ -10,6 +10,7 @@ import '../../features/notifications/services/reminder_service.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/notifications/screens/notification_screen.dart';
 import '../../features/records/management_screens.dart';
+import '../../features/prices/screens/ad_price_screen.dart';
 import '../../features/reservations/screens/reservation_screen.dart';
 import '../../features/settings/screens/settings_screen.dart';
 import '../widgets/app_sidebar.dart';
@@ -38,6 +39,7 @@ class MainLayoutState extends State<MainLayout> {
     'Bildirimler',
     'Ayarlar',
     'Rezervasyonlar',
+    'Reklam Fiyatları',
   ];
 
   bool _canAccess(String module) => true;
@@ -48,6 +50,7 @@ class MainLayoutState extends State<MainLayout> {
     if (_canAccess('customers')) 2,
     if (_canAccess('contracts')) ...[3, 4],
     if (_canAccess('reservations')) 7,
+    if (_canAccess('prices')) 8,
     if (_canAccess('notifications')) 5,
     if (_canAccess('settings')) 6,
   ];
@@ -233,6 +236,7 @@ class MainLayoutState extends State<MainLayout> {
       5 => 'notifications',
       6 => 'settings',
       7 => 'reservations',
+      8 => 'prices',
       _ => null,
     };
     if (module != null && !_canAccess(module)) {
@@ -278,6 +282,8 @@ class MainLayoutState extends State<MainLayout> {
         return SettingsScreen(store: widget.store);
       case 7:
         return ReservationScreen(store: widget.store);
+      case 8:
+        return AdPriceScreen(store: widget.store);
 
       default:
         return Center(

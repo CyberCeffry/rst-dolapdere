@@ -7,7 +7,9 @@ import '../../../core/utils/contract_remaining_time.dart';
 import '../../../core/utils/turkish_text.dart';
 import '../../../models/reservation_model.dart';
 import '../../../shared/widgets/searchable_picker.dart';
+import '../../../shared/widgets/space_form.dart';
 import '../../../shared/widgets/space_hover.dart';
+import '../../../shared/widgets/space_menu.dart';
 import '../../records/management_screens.dart';
 import '../services/reservation_pdf_service.dart';
 
@@ -421,14 +423,24 @@ class _ReservationScreenState extends State<ReservationScreen> {
                   style: TextStyle(color: startColor),
                 ),
               ),
-            PopupMenuButton<String>(
+            SpaceMenuButton<String>(
+              tooltip: 'Kayıt işlemleri',
               onSelected: (value) {
                 if (value == 'edit') _openForm(reservation);
                 if (value == 'delete') _delete(reservation);
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-                PopupMenuItem(value: 'delete', child: Text('Sil')),
+              items: const [
+                SpaceMenuItem(
+                  value: 'edit',
+                  label: 'Düzenle',
+                  icon: Icons.edit_outlined,
+                ),
+                SpaceMenuItem(
+                  value: 'delete',
+                  label: 'Sil',
+                  icon: Icons.delete_outline,
+                  destructive: true,
+                ),
               ],
             ),
           ],
@@ -447,7 +459,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
       animation: widget.store,
       builder: (context, _) {
         final records = _records();
-        return SingleChildScrollView(
+        return Padding(
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             20,
@@ -457,6 +469,15 @@ class _ReservationScreenState extends State<ReservationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Sabit ust kisim (baslik, filtreler, arama, kayit sayisi)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -621,6 +642,16 @@ class _ReservationScreenState extends State<ReservationScreen> {
                     ),
                   ),
                 ),
+                    ],
+                  ),
+                ),
+              ),
+              // Yalnizca liste kismi kayar
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
               if (records.isEmpty)
                 Card(
                   child: SizedBox(
@@ -654,6 +685,10 @@ class _ReservationScreenState extends State<ReservationScreen> {
                 )
               else
                 ...records.map(_tile),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -756,7 +791,15 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
     final editing = widget.initial != null;
     final nothingToReserve = spaces.isEmpty;
     return AlertDialog(
-      title: Text(editing ? 'Rezervasyonu düzenle' : 'Yeni rezervasyon'),
+      clipBehavior: Clip.antiAlias,
+      titlePadding: EdgeInsets.zero,
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+      title: SpaceDialogHeader(
+        icon: Icons.bookmark_border,
+        title: editing ? 'Rezervasyonu düzenle' : 'Yeni rezervasyon',
+        subtitle: 'Mevcut kiracıdan sonraki kullanıcı için alan ayırın',
+      ),
       content: SizedBox(
         width: 480,
         child: SingleChildScrollView(
@@ -766,7 +809,10 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 4),
+                    const SpaceSectionTitle(
+                      text: 'Alan ve kişi',
+                      icon: Icons.handshake_outlined,
+                    ),
                     SearchablePicker<String>(
                       label: 'Reklam alanı',
                       value: _adSpaceId,
@@ -799,6 +845,10 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                           setState(() => _customerId = value),
                     ),
                     const SizedBox(height: 14),
+                    const SpaceSectionTitle(
+                      text: 'Not',
+                      icon: Icons.notes_outlined,
+                    ),
                     TextField(
                       controller: _notes,
                       maxLines: 3,
@@ -821,7 +871,11 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
           child: const Text('Kapat'),
         ),
         if (!nothingToReserve)
-          FilledButton(onPressed: _save, child: const Text('Kaydet')),
+          FilledButton.icon(
+            onPressed: _save,
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Kaydet'),
+          ),
       ],
     );
   }

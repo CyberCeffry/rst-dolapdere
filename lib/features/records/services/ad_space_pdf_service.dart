@@ -190,10 +190,10 @@ class AdSpacePdfService {
               _row(
                 [
                   'TOPLAM $totalAdSpaces ALAN',
-                  'TOPLAM $occupiedAdSpaces DOLU',
+                  'TOPLAM $occupiedAdSpaces ADET DOLU',
                   '',
                   '',
-                  'TOPLAM $emptyAdSpaces BOŞ',
+                  'TOPLAM $emptyAdSpaces ADET BOŞ',
                   '',
                 ],
                 boldFont,
