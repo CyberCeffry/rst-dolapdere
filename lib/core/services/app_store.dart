@@ -1145,6 +1145,9 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       responsibleUsername:
           contract.responsibleUsername ?? existingContract?.responsibleUsername,
       pdfPath: contract.pdfPath,
+      installmentCount: contract.installmentCount,
+      paidInstallments: contract.paidInstallments,
+      freeInstallments: contract.freeInstallments,
       // Mevcut geçmiş korunur; yeni sözleşmeyse "oluşturuldu" kaydı eklenir.
       history:
           existingContract?.history ??
@@ -1240,6 +1243,9 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       responsibleUserId: source.responsibleUserId,
       responsibleUsername: source.responsibleUsername,
       pdfPath: renewed.pdfPath,
+      installmentCount: renewed.installmentCount,
+      paidInstallments: renewed.paidInstallments,
+      freeInstallments: renewed.freeInstallments,
       history: [
         ...source.history,
         ContractHistoryEntry(
@@ -1354,6 +1360,21 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
         .length;
   }
 
+  // Sözleşmenin taksit / tahsilat (ödendi mi) durumunu günceller.
+  // [states] her taksit için: 0 = ödenmedi, 1 = ödendi, 2 = bedelsiz.
+  Future<void> setContractPayments(String id, List<int> states) async {
+    final index = _contracts.indexWhere((item) => item.id == id);
+    if (index < 0) throw StateError('Sözleşme bulunamadı.');
+    final updated = _copyContract(
+      _contracts[index],
+      paidInstallments: [for (final state in states) state == 1],
+      freeInstallments: [for (final state in states) state == 2],
+    );
+    _contracts[index] = updated;
+    await _persistCollection('contracts', [updated]);
+    notifyListeners();
+  }
+
   // Sözleşmeyi aktif/pasif yapar ve geçmişe kaydeder.
   Future<void> setContractActive(String id, bool isActive) async {
     final index = _contracts.indexWhere((item) => item.id == id);
@@ -1445,6 +1466,9 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
     String? responsibleUserId,
     String? responsibleUsername,
     String? pdfPath,
+    int? installmentCount,
+    List<bool>? paidInstallments,
+    List<bool>? freeInstallments,
   }) {
     return ContractModel(
       id: source.id,
@@ -1465,6 +1489,9 @@ class AppStore extends ChangeNotifier with WidgetsBindingObserver {
       responsibleUserId: responsibleUserId ?? source.responsibleUserId,
       responsibleUsername: responsibleUsername ?? source.responsibleUsername,
       pdfPath: pdfPath ?? source.pdfPath,
+      installmentCount: installmentCount ?? source.installmentCount,
+      paidInstallments: paidInstallments ?? source.paidInstallments,
+      freeInstallments: freeInstallments ?? source.freeInstallments,
     );
   }
 

@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "RST Dolapdere"
-#define MyAppVersion "v 01.31"
+#define MyAppVersion "v 01.35"
 #define MyAppPublisher "CyberCeffry"
 #define MyAppURL "https://www.example.com/"
 #define MyAppExeName "dere_sozlesme_takip.exe"

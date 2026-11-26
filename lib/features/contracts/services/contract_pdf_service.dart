@@ -6,6 +6,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../core/services/app_store.dart';
+import '../../../core/utils/contract_date_helper.dart';
 import '../../../core/utils/contract_remaining_time.dart';
 import '../../../core/utils/date_helper.dart';
 import '../../../models/contract_model.dart';
@@ -34,6 +35,18 @@ class ContractPdfService {
   static String _notes(ContractModel contract) {
     final note = contract.notes.trim();
     return note.isEmpty ? '-' : note;
+  }
+
+  /// Peşinse Ödendi/Ödenmedi; taksitliyse en son ödenen taksit yazılır.
+  static String _paymentStatus(ContractModel contract) {
+    if (contract.isAllFree) return 'Bedelsiz';
+    if (!contract.hasInstallments) {
+      return contract.isCollected ? 'Ödendi' : 'Ödenmedi';
+    }
+    final last = contract.lastPaidInstallment;
+    if (last == 0) return 'Ödenmedi';
+    final done = contract.isCollected ? ' (Tamamlandı)' : '';
+    return '$last. Taksit Ödendi$done';
   }
 
   static String _remaining(ContractModel contract) {
@@ -116,6 +129,7 @@ class ContractPdfService {
               4: pw.FlexColumnWidth(1.2),
               5: pw.FlexColumnWidth(1.3),
               6: pw.FlexColumnWidth(1.5),
+              7: pw.FlexColumnWidth(1.3),
             },
             children: [
               _row(
@@ -126,6 +140,7 @@ class ContractPdfService {
                   'Kiralama Süresi',
                   'Kalan süre',
                   'Bedel + KDV',
+                  'Ödeme durumu',
                   'Açıklama',
                 ],
                 boldFont,
@@ -134,16 +149,17 @@ class ContractPdfService {
               ...contracts.map((contract) {
                 final customer = store.customerFor(contract.customerId);
                 final space = store.adSpaceFor(contract.adSpaceId);
-                final unit = contract.durationUnit == ContractDurationUnit.month
-                    ? 'ay'
-                    : 'yıl';
                 return _row([
                   space?.name ?? 'Reklam alanı',
                   customer?.name ?? 'Müşteri',
                   dateFormat.format(contract.endDate),
-                  '${contract.durationCount} $unit',
+                  ContractDateHelper.durationLabel(
+                    contract.startDate,
+                    contract.endDate,
+                  ),
                   _remaining(contract),
                   currencyFormat.format(contract.monthlyPrice),
+                  _paymentStatus(contract),
                   _notes(contract),
                 ], font);
               }),
@@ -155,6 +171,7 @@ class ContractPdfService {
                   '',
                   '',
                   '${currencyFormat.format(total)} + KDV',
+                  '',
                   '',
                 ],
                 boldFont,

@@ -22,9 +22,24 @@ import '../../models/customer_model.dart';
 
 enum RecordType { adSpaces, customers, contracts }
 
-enum ContractListFilter { all, active, upcoming, notStarted, passive, expired }
+enum ContractListFilter {
+  all,
+  active,
+  upcoming,
+  notStarted,
+  passive,
+  expired,
+  paymentDone,
+  paymentPending,
+}
 
-enum EndedContractFilter { all, finalized, expired }
+enum EndedContractFilter {
+  all,
+  finalized,
+  expired,
+  paymentDone,
+  paymentPending,
+}
 
 enum AdSpaceListFilter { all, available, reserved, occupied, expiring }
 
@@ -118,7 +133,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _contractFilter = widget.initialContractFilter;
+    _contractFilter = switch (widget.initialContractFilter) {
+      ContractListFilter.active ||
+      ContractListFilter.passive => ContractListFilter.all,
+      final other => other,
+    };
     _adSpaceFilter = widget.initialAdSpaceFilter;
     if (widget.showEndedContracts) _contractSort = ContractSort.endDesc;
   }
@@ -249,6 +268,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
               EndedContractFilter.all => true,
               EndedContractFilter.finalized => contract.isFinalized,
               EndedContractFilter.expired => !contract.isFinalized && days < 0,
+              EndedContractFilter.paymentDone => contract.isCollected,
+              EndedContractFilter.paymentPending => !contract.isCollected,
             }
           : switch (_contractFilter) {
               ContractListFilter.all => true,
@@ -265,6 +286,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
               ContractListFilter.passive =>
                 !contract.isActive && !contract.isFinalized,
               ContractListFilter.expired => days < 0,
+              ContractListFilter.paymentDone => contract.isCollected,
+              ContractListFilter.paymentPending => !contract.isCollected,
             };
       return statusOk && _inDateRange(contract);
     }).toList();
@@ -506,6 +529,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
     ContractListFilter.notStarted => 'Başlayacak',
     ContractListFilter.passive => 'Pasif',
     ContractListFilter.expired => 'Süresi dolanlar',
+    ContractListFilter.paymentDone => 'Ödemesi tamamlananlar',
+    ContractListFilter.paymentPending => 'Ödemesi tamamlanmayanlar',
   };
 
   String _filterSummary() {
@@ -513,11 +538,12 @@ class _ManagementScreenState extends State<ManagementScreen> {
     final parts = <String>[];
     if (widget.showEndedContracts) {
       if (_endedFilter != EndedContractFilter.all) {
-        parts.add(
-          _endedFilter == EndedContractFilter.finalized
-              ? 'Bitirilenler'
-              : 'Süresi dolanlar',
-        );
+        parts.add(switch (_endedFilter) {
+          EndedContractFilter.finalized => 'Bitirilenler',
+          EndedContractFilter.paymentDone => 'Ödemesi tamamlananlar',
+          EndedContractFilter.paymentPending => 'Ödemesi tamamlanmayanlar',
+          _ => 'Süresi dolanlar',
+        });
       }
     } else if (_contractFilter != ContractListFilter.all) {
       parts.add(_contractFilterLabel(_contractFilter));
@@ -675,7 +701,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
               value: _contractFilter,
               items: [
                 for (final filter in ContractListFilter.values)
-                  (filter, _contractFilterLabel(filter)),
+                  if (filter != ContractListFilter.active &&
+                      filter != ContractListFilter.passive)
+                    (filter, _contractFilterLabel(filter)),
               ],
               onChanged: (value) => setState(() => _contractFilter = value),
             ),
@@ -687,6 +715,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 (EndedContractFilter.all, 'Tüm biten sözleşmeler'),
                 (EndedContractFilter.finalized, 'Bitirilenler'),
                 (EndedContractFilter.expired, 'Süresi dolanlar'),
+                (EndedContractFilter.paymentDone, 'Ödemesi tamamlananlar'),
+                (
+                  EndedContractFilter.paymentPending,
+                  'Ödemesi tamamlanmayanlar',
+                ),
               ],
               onChanged: (value) => setState(() => _endedFilter = value),
             ),
@@ -992,6 +1025,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
           label: 'Detayları görüntüle',
           icon: Icons.visibility_outlined,
         ),
+        const SpaceMenuItem(
+          value: 'payment',
+          label: 'Tahsilat / Taksit durumu',
+          icon: Icons.payments_outlined,
+        ),
         if (record.hasPdf)
           const SpaceMenuItem(
             value: 'pdf',
@@ -1044,6 +1082,55 @@ class _ManagementScreenState extends State<ManagementScreen> {
     ];
   }
 
+  Color _paymentColor(ContractModel contract) {
+    if (contract.isAllFree) return AppColors.info;
+    if (contract.isCollected) return AppColors.success;
+    if (contract.completedCount > 0) return AppColors.warning;
+    return AppColors.danger;
+  }
+
+  Widget _paymentButton(ContractModel contract) {
+    final color = _paymentColor(contract);
+    return OutlinedButton.icon(
+      onPressed: () => _showPaymentDialog(contract),
+      icon: Icon(
+        contract.isCollected ? Icons.check_circle : Icons.payments_outlined,
+        size: 16,
+        color: color,
+      ),
+      label: Text(
+        contract.paymentSummary,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+      ),
+    );
+  }
+
+  Future<void> _showPaymentDialog(ContractModel contract) async {
+    final result = await showDialog<List<int>>(
+      context: context,
+      builder: (_) => _PaymentDialog(contract: contract),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await widget.store.setContractPayments(contract.id, result);
+    } on StateError catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
   Widget _recordTile(dynamic record) {
     String title;
     String subtitle;
@@ -1081,6 +1168,13 @@ class _ManagementScreenState extends State<ManagementScreen> {
               TextSpan(
                 text:
                     'Tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}\n',
+              ),
+              TextSpan(
+                text: 'Ödeme: ${contract.paymentSummary}\n',
+                style: TextStyle(
+                  color: _paymentColor(contract),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const TextSpan(text: 'Kalan süre: '),
               TextSpan(
@@ -1132,6 +1226,14 @@ class _ManagementScreenState extends State<ManagementScreen> {
           '${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}'
           '${contract.responsibleUsername == null ? '' : ' • Sorumlu: ${contract.responsibleUsername}'}';
       icon = Icons.description_outlined;
+      subtitleWidget = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(subtitle),
+          const SizedBox(height: 6),
+          _paymentButton(contract),
+        ],
+      );
       status = contract.isFinalized
           ? 'Bitti olarak işaretlendi'
           : days < 0
@@ -1204,6 +1306,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
                       switch (value) {
                         case 'details':
                           _showContractDetails(record);
+                        case 'payment':
+                          _showPaymentDialog(record);
                         case 'pdf':
                           _openContractPdf(record);
                         case 'toggle':
@@ -1513,6 +1617,19 @@ class ContractDetailsDialog extends StatelessWidget {
               Text(
                 'Toplam tutar: ${NumberFormat.currency(locale: 'tr_TR', symbol: '₺').format(contract.monthlyPrice)}',
               ),
+              Text('Ödeme şekli: ${contract.paymentMethodLabel}'),
+              Text('Tahsilat: ${contract.paymentSummary}'),
+              if (contract.hasInstallments)
+                for (var i = 0; i < contract.installmentCount; i++)
+                  Text(
+                    '  ${i + 1}. Taksit: '
+                    '${currencyFormat.format(contract.installmentAmounts[i])}'
+                    ' • ${contract.paymentStates[i] == 2
+                        ? 'Bedelsiz'
+                        : contract.paymentStates[i] == 1
+                        ? 'Ödendi'
+                        : 'Ödenmedi'}',
+                  ),
               if (contract.notes.isNotEmpty) Text('Notlar: ${contract.notes}'),
               const SizedBox(height: 20),
               Text(
@@ -1779,6 +1896,8 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
   late DateTime _endDate;
   late ContractDurationUnit _durationUnit;
   late bool _active;
+  int _installments = 1; // 0 = bedelsiz, 1 = peşin, 2-3 = taksit
+  int _initialInstallments = 1;
   String? _error;
   String? _existingPdf;
   String? _newPdfSource;
@@ -1789,6 +1908,12 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
     super.initState();
     final initial = widget.initial;
     _existingPdf = initial is ContractModel ? initial.pdfPath : null;
+    _installments = initial is ContractModel
+        ? (initial.installmentCount <= 1 && initial.isAllFree
+              ? 0
+              : initial.installmentCount)
+        : 1;
+    _initialInstallments = _installments;
     _name = TextEditingController(
       text: initial is AdSpaceModel
           ? initial.name
@@ -1900,8 +2025,7 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
       RecordType.adSpaces =>
         editing ? 'Reklam alanını düzenle' : 'Yeni reklam alanı',
       RecordType.customers => editing ? 'Müşteriyi düzenle' : 'Yeni müşteri',
-      RecordType.contracts =>
-        editing ? 'Sözleşmeyi düzenle' : 'Yeni sözleşme',
+      RecordType.contracts => editing ? 'Sözleşmeyi düzenle' : 'Yeni sözleşme',
     };
   }
 
@@ -2020,6 +2144,9 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           notes: _notes.text.trim(),
           isActive: _active,
           pdfPath: pdfPlan.relativePath,
+          installmentCount: _installmentCount,
+          paidInstallments: _paymentFlagsForSave(),
+          freeInstallments: _freeFlagsForSave(),
         );
         try {
           if (widget.isRenewal && widget.initial is ContractModel) {
@@ -2121,6 +2248,61 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
 
   double _parsePrice() =>
       double.tryParse(_price.text.trim().replaceAll(',', '.')) ?? 0;
+
+  /// Kayıtlı taksit sayısı: Bedelsiz seçiliyse 1 kalem (bedelsiz işaretli).
+  int get _installmentCount => _installments < 1 ? 1 : _installments;
+
+  /// Düzenlemede seçim değişmediyse eski işaretler korunur; yenilemede veya
+  /// seçim değişince sıfırlanır.
+  bool get _keepPaymentFlags =>
+      !widget.isRenewal &&
+      widget.initial is ContractModel &&
+      _installments == _initialInstallments;
+
+  /// Kayıtta saklanacak taksit ödeme durumları.
+  List<bool> _paymentFlagsForSave() {
+    if (_keepPaymentFlags) {
+      return List<bool>.from((widget.initial as ContractModel).paidFlags);
+    }
+    return List<bool>.filled(_installmentCount, false);
+  }
+
+  /// Kayıtta saklanacak bedelsiz işaretleri (Bedelsiz seçiliyse tek kalem).
+  List<bool> _freeFlagsForSave() {
+    if (_installments == 0) return [true];
+    if (_keepPaymentFlags) {
+      return List<bool>.from((widget.initial as ContractModel).freeFlags);
+    }
+    return List<bool>.filled(_installmentCount, false);
+  }
+
+  Widget _installmentPreview() {
+    final money = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
+    final total = _parsePrice();
+    final amounts = ContractModel.splitAmount(total, _installmentCount);
+    if (_installments == 0) {
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Text('Bedelsiz: Tahsilat Yapılmayacak'),
+      );
+    }
+    if (_installments <= 1) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text('Peşin ödeme: ${money.format(total)}'),
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < amounts.length; i++)
+            Text('${i + 1}. Taksit: ${money.format(amounts[i])}'),
+        ],
+      ),
+    );
+  }
 
   Widget _textField(
     String label,
@@ -2323,11 +2505,54 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
                   _textField(
                     'Toplam tutar (₺)',
                     _price,
-                    required: true,
+                    required: _installments != 0,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                   ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Ödeme şekli',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 1, label: Text('Peşin')),
+
+                        ButtonSegment(value: 0, label: Text('Bedelsiz')),
+
+                        // ButtonSegment(value: 5, label: Text('5 Taksit')),
+                      ],
+                      selected: {_installments},
+                      onSelectionChanged: (selection) =>
+                          setState(() => _installments = selection.first),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 2, label: Text('2 Taksit')),
+                        ButtonSegment(value: 3, label: Text('3 Taksit')),
+                        ButtonSegment(value: 4, label: Text('4 Taksit')),
+                        ButtonSegment(value: 5, label: Text('5 Taksit')),
+                      ],
+                      selected: {_installments},
+                      onSelectionChanged: (selection) =>
+                          setState(() => _installments = selection.first),
+                    ),
+                  ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _price,
+                    builder: (context, value, child) => _installmentPreview(),
+                  ),
+                  const SizedBox(height: 12),
                   _textField('Notlar', _notes, maxLines: 3),
                   // if (ContractFileService.isSupported) _pdfSection(),
                   // SwitchListTile(
@@ -2359,6 +2584,88 @@ class _RecordFormDialogState extends State<_RecordFormDialog> {
           onPressed: _save,
           icon: const Icon(Icons.check_rounded),
           label: const Text('Kaydet'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PaymentDialog extends StatefulWidget {
+  const _PaymentDialog({required this.contract});
+
+  final ContractModel contract;
+
+  @override
+  State<_PaymentDialog> createState() => _PaymentDialogState();
+}
+
+class _PaymentDialogState extends State<_PaymentDialog> {
+  // Her taksit için: 0 = ödenmedi, 1 = ödendi, 2 = bedelsiz.
+  late List<int> _states;
+
+  @override
+  void initState() {
+    super.initState();
+    _states = List<int>.from(widget.contract.paymentStates);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contract = widget.contract;
+    final amounts = contract.installmentAmounts;
+    final money = NumberFormat.currency(locale: 'tr_TR', symbol: '₺');
+    final single = contract.installmentCount <= 1;
+    return AlertDialog(
+      title: Text(single ? 'Tahsilat durumu' : 'Taksit Ödemeleri'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Toplam tutar: ${money.format(contract.monthlyPrice)}'),
+              for (var i = 0; i < _states.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${single ? 'Peşin ödeme' : '${i + 1}. Taksit'} • '
+                        '${_states[i] == 2 ? 'Bedelsiz' : money.format(amounts[i])}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      SegmentedButton<int>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        segments: const [
+                          ButtonSegment(value: 0, label: Text('Ödenmedi')),
+                          ButtonSegment(value: 1, label: Text('Ödendi')),
+                          ButtonSegment(value: 2, label: Text('Bedelsiz')),
+                        ],
+                        selected: {_states[i]},
+                        onSelectionChanged: (selection) =>
+                            setState(() => _states[i] = selection.first),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Vazgeç'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _states),
+          child: const Text('Kaydet'),
         ),
       ],
     );

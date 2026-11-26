@@ -96,7 +96,8 @@ class DashboardScreen extends StatelessWidget {
                         ),
                       ),
                       _SummaryCard(
-                        title: 'Süresi Yaklaşan',
+                        title:
+                            'Süresi Yaklaşan Sözleşmeler \n(10 Günden Az Kalan)',
                         value: '${expiring.length}',
                         icon: Icons.notifications_active_outlined,
                         color: AppColors.danger,
@@ -232,35 +233,35 @@ class _SummaryCardState extends State<_SummaryCard> {
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: InkWell(
-        onTap: widget.onTap,
-        onHover: (value) => setState(() => _hovering = value),
-        hoverColor: Colors.transparent, // ani renk değişimini kapat
-        highlightColor: Colors.transparent,
-        splashColor: widget.color.withValues(alpha: 0.12),
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: _hovering ? 1 : 0),
-          duration: const Duration(milliseconds: 800),
-          curve: Curves.easeOutCubic,
-          builder: (context, t, child) {
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.center,
-                  // 1.5 = köşeleri de kapsayacak kadar büyük yarıçap
-                  radius: t * 1.5,
-                  colors: [
-                    widget.color.withValues(alpha: 0.10),
-                    widget.color.withValues(alpha: 0.10),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.98, 1.0],
+          onTap: widget.onTap,
+          onHover: (value) => setState(() => _hovering = value),
+          hoverColor: Colors.transparent, // ani renk değişimini kapat
+          highlightColor: Colors.transparent,
+          splashColor: widget.color.withValues(alpha: 0.12),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: _hovering ? 1 : 0),
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeOutCubic,
+            builder: (context, t, child) {
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    // 1.5 = köşeleri de kapsayacak kadar büyük yarıçap
+                    radius: t * 1.5,
+                    colors: [
+                      widget.color.withValues(alpha: 0.10),
+                      widget.color.withValues(alpha: 0.10),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.98, 1.0],
+                  ),
                 ),
-              ),
-              child: child,
-            );
-          },
-          child: _buildContent(context),
-        ),
+                child: child,
+              );
+            },
+            child: _buildContent(context),
+          ),
         ),
       ),
     );
