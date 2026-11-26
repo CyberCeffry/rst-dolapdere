@@ -69,6 +69,10 @@ String contractRemainingLabel(ContractModel contract) {
   if (contract.isFinalized) return 'Bitti';
   final days = DateHelper.daysUntil(contract.endDate);
   if (days < 0) return 'Süresi doldu';
+  if (DateHelper.daysUntil(contract.startDate) > 0) {
+    return 'Başlamasına '
+        '${ContractRemainingTime.formatDetailed(contract.startDate)} var';
+  }
   if (days == 0) return 'Bugün bitiyor';
   return ContractRemainingTime.format(days);
 }
@@ -1218,6 +1222,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
       final customer = widget.store.customerFor(contract.customerId);
       final space = widget.store.adSpaceFor(contract.adSpaceId);
       final days = DateHelper.daysUntil(contract.endDate);
+      final startsLater = DateHelper.daysUntil(contract.startDate) > 0;
       title = space?.name ?? 'Reklam alanı';
       subtitle =
           '${customer?.name ?? 'Kiracı'} • '
@@ -1240,11 +1245,15 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ? 'Süresi doldu'
           : !contract.isActive
           ? 'Pasif'
+          : startsLater
+          ? 'Başlamasına ${ContractRemainingTime.formatDetailed(contract.startDate)} var'
           : days <= 10
           ? '$days gün kaldı'
           : _activeStatus(contract.endDate, days);
       statusColor = contract.isFinalized || !contract.isActive || days < 0
           ? Theme.of(context).colorScheme.onSurfaceVariant
+          : startsLater
+          ? AppColors.info
           : days <= 10
           ? AppColors.danger
           : AppColors.success;
@@ -1736,7 +1745,7 @@ class _CustomerDetailsDialog extends StatelessWidget {
                 final remaining = ended
                     ? 'Bitti'
                     : startsLater
-                    ? 'Başlayacak'
+                    ? 'Başlamasına ${ContractRemainingTime.formatDetailed(contract.startDate)} var'
                     : ContractRemainingTime.format(days);
                 final urgent =
                     !ended &&

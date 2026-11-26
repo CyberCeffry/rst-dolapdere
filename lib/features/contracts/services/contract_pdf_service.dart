@@ -53,6 +53,10 @@ class ContractPdfService {
     if (contract.isFinalized) return '-';
     final days = DateHelper.daysUntil(contract.endDate);
     if (days < 0) return '-';
+    if (DateHelper.daysUntil(contract.startDate) > 0) {
+      return 'Başlamasına '
+          '${ContractRemainingTime.formatDetailed(contract.startDate)} var';
+    }
     if (days == 0) return 'Bugün';
     return ContractRemainingTime.formatDetailed(contract.endDate);
   }

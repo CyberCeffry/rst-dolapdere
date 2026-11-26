@@ -142,9 +142,9 @@ class ContractModel {
           : '$installmentCount Taksit • Bedelsiz';
     }
     if (installmentCount <= 1) {
-      return isCollected ? 'Peşin • Tahsil Edildi' : 'Peşin • Tahsil edilmedi';
+      return isCollected ? 'Peşin • Tahsil Edildi' : 'Peşin • Tahsil Edilmedi';
     }
-    final free = freeCount > 0 ? ' ($freeCount bedelsiz)' : '';
+    final free = freeCount > 0 ? ' ($freeCount Bedelsiz)' : '';
     if (isCollected) return '$installmentCount Taksit • Tahsil Edildi$free';
     return '$installmentCount Taksit • $completedCount/$installmentCount Ödendi$free';
   }
